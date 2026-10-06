@@ -1,0 +1,233 @@
+.lobby-overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #0c120f 0%, #1a2619 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.lobby-panel {
+  width: min(520px, 90vw);
+  background: rgba(36, 51, 39, 0.95);
+  border: 3px solid rgba(245, 230, 180, 0.4);
+  border-radius: 8px;
+  padding: 32px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+}
+
+.lobby-title {
+  font-size: 32px;
+  font-weight: 1000;
+  letter-spacing: 0.15em;
+  color: #f2d88e;
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.lobby-subtitle {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: rgba(242, 216, 142, 0.6);
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.lobby-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lobby-tab {
+  flex: 1;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: color 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.lobby-tab.active {
+  color: #f2d88e;
+  border-bottom-color: #f2d88e;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.lobby-input {
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: #f7efcf;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lobby-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.lobby-input:focus {
+  outline: none;
+  border-color: #f2d88e;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.lobby-btn {
+  width: 100%;
+  padding: 14px;
+  margin-top: 8px;
+  background: rgba(40, 60, 45, 0.8);
+  border: 2px solid rgba(242, 216, 142, 0.4);
+  border-radius: 4px;
+  color: #f2d88e;
+  font-weight: 1000;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lobby-btn:hover:not(:disabled) {
+  background: rgba(60, 90, 65, 0.9);
+  border-color: #f2d88e;
+}
+
+.lobby-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lobby-btn.primary {
+  background: #6b8f6a;
+  border-color: #a5d6a7;
+}
+
+.lobby-btn.primary:hover:not(:disabled) {
+  background: #7da17c;
+}
+
+.lobby-status {
+  margin-top: 12px;
+  font-size: 12px;
+  text-align: center;
+  min-height: 20px;
+}
+
+.lobby-status.success {
+  color: #a5d6a7;
+}
+
+.lobby-status.error {
+  color: #ff6b6b;
+}
+
+.room-code-display {
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px dashed rgba(242, 216, 142, 0.6);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.room-code-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: rgba(242, 216, 142, 0.7);
+  margin-bottom: 8px;
+}
+
+.room-code {
+  font-size: 28px;
+  font-weight: 1000;
+  letter-spacing: 0.12em;
+  color: #f2d88e;
+  font-family: "Courier New", monospace;
+  margin-bottom: 8px;
+}
+
+.room-code-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.lobby-roster {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lobby-roster.hidden {
+  display: none;
+}
+
+.roster-title {
+  font-size: 12px;
+  font-weight: 1000;
+  letter-spacing: 0.1em;
+  color: #f2d88e;
+  margin-bottom: 14px;
+}
+
+.roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.roster-item {
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #f7efcf;
+}
+
+.roster-item.host {
+  background: rgba(107, 143, 106, 0.3);
+  border-color: rgba(165, 214, 167, 0.4);
+}
+
+.roster-badge {
+  font-size: 9px;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  color: #a5d6a7;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+
+#start-btn {
+  margin-top: 0;
+}
+
+#start-btn.hidden {
+  display: none;
+}
