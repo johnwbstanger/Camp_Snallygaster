@@ -4,18 +4,21 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/ws': {
-        target: 'ws://localhost:3000',
+      '/matchmake': {
+        target: 'ws://localhost:3001',
         ws: true
+      },
+      '/api': {
+        target: 'http://localhost:3001',
       }
     }
   },
   build: {
     outDir: 'dist/client',
     target: 'es2020',
-    minify: 'terser'
+    minify: 'esbuild'
   },
   optimizeDeps: {
-    include: ['three', 'cannon-es']
+    include: ['three']
   }
 });
