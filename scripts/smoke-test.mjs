@@ -33,12 +33,21 @@ try {
     throw new Error("room created but player state was not initialized");
   }
 
-  if (room.metadata?.roomCode !== roomCode) {
-    throw new Error("room code metadata was not created");
+  const availableRooms = await client.getAvailableRooms("game");
+  const listing = availableRooms.find((candidate) => candidate.roomId === room.roomId);
+
+  if (!listing) {
+    throw new Error("created room was not discoverable through matchmaking");
+  }
+
+  if (listing.metadata?.roomCode !== roomCode) {
+    throw new Error(
+      `room code metadata mismatch: expected ${roomCode}, got ${listing.metadata?.roomCode ?? "missing"}`,
+    );
   }
 
   await room.leave();
-  console.log("SMOKE TEST PASS: server healthy, room created, player joined, room code assigned");
+  console.log("SMOKE TEST PASS: server healthy, room created, player joined, room discoverable, room code assigned");
 } finally {
   server.kill("SIGTERM");
 }
