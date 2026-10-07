@@ -3,6 +3,8 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import type { GameRoomState, PlayerState, CamperState } from "../../shared/GameRoomState.js";
 import { GameRoomState as GameRoomStateClass, Vec3, PlayerState as PlayerStateClass, CamperState as CamperStateClass, MonsterState as MonsterStateClass, DoorState as DoorStateClass, GunState as GunStateClass } from "../../shared/GameRoomState.js";
 
+type Position = { x: number; y: number; z: number };
+
 let RAPIER_READY = false;
 
 RAPIER.init().then(() => {
@@ -14,7 +16,7 @@ const CAMPER_NAMES = [
   "Luke", "Hannah", "Eric", "Rachel", "Max", "Danny",
 ];
 
-const HIDING_SPOTS: { id: string; position: Vec3; label: string }[] = [
+const HIDING_SPOTS: { id: string; position: Position; label: string }[] = [
   { id: "cabin-a-bed-1", position: { x: -18, y: 0.8, z: 6 }, label: "under a cabin bunk" },
   { id: "cabin-a-closet", position: { x: -22, y: 0.8, z: 9 }, label: "inside a cabin closet" },
   { id: "cabin-b-bed-1", position: { x: -12, y: 0.8, z: -10 }, label: "under a bunk" },
@@ -36,7 +38,7 @@ const DOOR_IDS = [
   "door:arts", "door:maintenance", "door:director", "drawer:director",
 ];
 
-const BUS_CENTER: Vec3 = { x: 0, y: 0, z: 40 };
+const BUS_CENTER: Position = { x: 0, y: 0, z: 40 };
 const WORLD_LIMIT = 48;
 const MONSTER_BASE_SPEED = 3.2;
 const MONSTER_CHASE_SPEED = 6.2;
@@ -44,7 +46,7 @@ const MONSTER_HEALTH = 5;
 
 export class GameRoom extends Room<GameRoomStateClass> {
   private physics: any = null;
-  private lastNoise: { position: Vec3; intensity: number; at: number } | null = null;
+  private lastNoise: { position: Position; intensity: number; at: number } | null = null;
   private monsterStunUntil = 0;
   private monsterRoamAngle = 0;
   private roundStartedAt = 0;
@@ -270,7 +272,8 @@ export class GameRoom extends Room<GameRoomStateClass> {
         camper.carriedByPlayerId = client.sessionId;
         camper.followingPlayerId = null;
         camper.state = "CARRIED";
-        player.followingCamperIds = player.followingCamperIds.filter((id) => id !== camperId);
+        const followingIndex = player.followingCamperIds.indexOf(camperId);
+        if (followingIndex !== -1) player.followingCamperIds.splice(followingIndex, 1);
         player.carryingCamperId = camperId;
       } else if (!camper.carriedByPlayerId && !player.carryingCamperId) {
         camper.followingPlayerId = client.sessionId;

@@ -20,5 +20,6 @@
       "vite/client"
     ]
   },
-  "include": ["src/main.ts"]
+  "include": ["src", "server", "shared"],
+  "exclude": ["src/game/Game.ts"]
 }
