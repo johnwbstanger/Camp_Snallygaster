@@ -4,12 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Camp Snallygaster - Emergency Evacuation 1993</title>
-  <link rel="stylesheet" href="/src/style.css" />
+  <style>
+    body { margin: 0; background: #e9e0cc; color: #263d33; font-family: Georgia, serif; }
+    #app { min-height: 100vh; }
+    .boot-fallback { min-height: 100vh; display: grid; align-content: center; justify-items: center; max-width: 38rem; margin: auto; padding: 3rem 2rem; text-align: center; }
+    .boot-fallback-mark { color: #a95740; font: italic 700 1rem/1.5 Georgia, serif; letter-spacing: .18em; }
+    .boot-fallback h1 { margin: 1.2rem 0 .5rem; font-size: clamp(2.5rem, 10vw, 5rem); line-height: .95; }
+    .boot-fallback p { color: #586352; font-size: 1.15rem; line-height: 1.6; }
+    .boot-fallback a { display: inline-block; margin-top: 1rem; padding: .9rem 1.2rem; background: #b96047; color: #fff1d5; font: 700 .8rem Arial, sans-serif; letter-spacing: .12em; text-decoration: none; }
+  </style>
 </head>
 <body>
-  <div id="app"></div>
-  <div id="hud-container"></div>
-  <canvas id="game-canvas"></canvas>
+  <div id="app">
+    <main class="boot-fallback">
+      <div class="boot-fallback-mark">SNALLYGASTER RECREATIONAL SERVICES · EST. 1967</div>
+      <h1>Camp Snallygaster</h1>
+      <p>A wilderness experience you'll never forget.</p>
+      <p>The camp office is opening. If this message stays here, refresh the page or enable JavaScript.</p>
+      <a href="/">RETURN TO CAMP</a>
+    </main>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
