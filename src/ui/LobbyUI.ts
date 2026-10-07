@@ -139,16 +139,26 @@ export class LobbyUI {
 
     if (roster && rosterList) {
       roster.classList.remove("hidden");
-      rosterList.innerHTML = players
-        .map(
-          (p) => `
-        <div class="roster-item ${this.isHost && p.id === localPlayerId ? "host" : ""}">
-          <div class="roster-name">${p.name}</div>
-          ${this.isHost && p.id === localPlayerId ? '<div class="roster-badge">HOST</div>' : ""}
-        </div>
-      `,
-        )
-        .join("");
+      rosterList.replaceChildren(
+        ...players.map((player) => {
+          const item = document.createElement("div");
+          item.className = `roster-item ${this.isHost && player.id === localPlayerId ? "host" : ""}`;
+
+          const name = document.createElement("div");
+          name.className = "roster-name";
+          name.textContent = player.name;
+          item.append(name);
+
+          if (this.isHost && player.id === localPlayerId) {
+            const badge = document.createElement("div");
+            badge.className = "roster-badge";
+            badge.textContent = "HOST";
+            item.append(badge);
+          }
+
+          return item;
+        }),
+      );
 
       if (startBtn) {
         startBtn.classList.toggle("hidden", !this.isHost);

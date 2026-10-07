@@ -165,8 +165,8 @@ lobby.setCreateCallback(async (name: string) => {
   }
 
   localSessionId = network.getSessionId() ?? "";
-  lobby.setRoomCode(network.getRoomCode() ?? roomId);
   lobby.setStatus("create", "Your camp is ready. Invite your cabinmates!", false);
+  lobby.setRoomCode(network.getRoomCode() ?? roomId);
 });
 
 lobby.setJoinCallback(async (roomCode: string, name: string) => {
@@ -186,7 +186,7 @@ lobby.setStartCallback(() => {
 
 network.onRoomStateChange((state) => {
   if (state.phase !== "LOBBY") return;
-  const players = Object.values(state.players ?? {}).map((player: any) => ({
+  const players = Array.from(state.players.values()).map((player: any) => ({
     id: player.id,
     name: player.name,
   }));
@@ -199,7 +199,7 @@ document.querySelector(".intro-skip")?.addEventListener("click", () => {
 
 window.setTimeout(() => {
   document.querySelector(".intro-card")?.classList.add("intro-dismissed");
-}, 2800);
+}, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 2800);
 
 document.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
   button.addEventListener("click", () => {

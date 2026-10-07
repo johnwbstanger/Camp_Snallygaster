@@ -16,7 +16,7 @@ export default defineConfig({
   build: {
     outDir: 'dist/client',
     target: 'es2020',
-    minify: 'terser'
+    minify: 'esbuild'
   },
   optimizeDeps: {
     include: ['three']

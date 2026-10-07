@@ -1,28 +1,29 @@
 .lobby-overlay {
   position: fixed;
   inset: 0;
-  background: linear-gradient(135deg, #0c120f 0%, #1a2619 100%);
+  background: rgba(25, 42, 34, 0.82);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  backdrop-filter: blur(4px);
 }
 
 .lobby-panel {
   width: min(520px, 90vw);
-  background: rgba(36, 51, 39, 0.95);
-  border: 3px solid rgba(245, 230, 180, 0.4);
+  background: #eee5cf;
+  border: 3px solid #73543a;
   border-radius: 8px;
   padding: 32px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 4px #d7c7a4;
+  color: #293f33;
 }
 
 .lobby-title {
   font-size: 32px;
   font-weight: 1000;
   letter-spacing: 0.15em;
-  color: #f2d88e;
+  color: #2c4939;
   margin-bottom: 4px;
   text-align: center;
 }
@@ -30,7 +31,7 @@
 .lobby-subtitle {
   font-size: 11px;
   letter-spacing: 0.1em;
-  color: rgba(242, 216, 142, 0.6);
+  color: #7a7057;
   text-align: center;
   margin-bottom: 28px;
 }
@@ -39,7 +40,7 @@
   display: flex;
   gap: 8px;
   margin-bottom: 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(65, 78, 58, 0.25);
 }
 
 .lobby-tab {
@@ -47,7 +48,7 @@
   padding: 12px 0;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.5);
+  color: #77735d;
   font-weight: 700;
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -57,8 +58,8 @@
 }
 
 .lobby-tab.active {
-  color: #f2d88e;
-  border-bottom-color: #f2d88e;
+  color: #a65340;
+  border-bottom-color: #a65340;
 }
 
 .tab-content {
@@ -73,33 +74,33 @@
   width: 100%;
   padding: 12px 14px;
   margin-bottom: 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #f8f3e7;
+  border: 1px solid #a59a7a;
   border-radius: 4px;
-  color: #f7efcf;
+  color: #293f33;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
 }
 
 .lobby-input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: #8b8068;
 }
 
 .lobby-input:focus {
   outline: none;
-  border-color: #f2d88e;
-  background: rgba(0, 0, 0, 0.5);
+  border-color: #a65340;
+  background: #fffaf0;
 }
 
 .lobby-btn {
   width: 100%;
   padding: 14px;
   margin-top: 8px;
-  background: rgba(40, 60, 45, 0.8);
-  border: 2px solid rgba(242, 216, 142, 0.4);
+  background: #526b4f;
+  border: 2px solid #78815b;
   border-radius: 4px;
-  color: #f2d88e;
+  color: #fff0d0;
   font-weight: 1000;
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -108,8 +109,8 @@
 }
 
 .lobby-btn:hover:not(:disabled) {
-  background: rgba(60, 90, 65, 0.9);
-  border-color: #f2d88e;
+  background: #3e5b43;
+  border-color: #aeb17e;
 }
 
 .lobby-btn:disabled {
@@ -118,12 +119,12 @@
 }
 
 .lobby-btn.primary {
-  background: #6b8f6a;
-  border-color: #a5d6a7;
+  background: #b65d45;
+  border-color: #d18a5b;
 }
 
 .lobby-btn.primary:hover:not(:disabled) {
-  background: #7da17c;
+  background: #a94f3b;
 }
 
 .lobby-status {
@@ -134,17 +135,17 @@
 }
 
 .lobby-status.success {
-  color: #a5d6a7;
+  color: #3e6b48;
 }
 
 .lobby-status.error {
-  color: #ff6b6b;
+  color: #a84636;
 }
 
 .room-code-display {
   padding: 16px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px dashed rgba(242, 216, 142, 0.6);
+  background: #f5eedc;
+  border: 1px dashed #958661;
   border-radius: 4px;
   text-align: center;
 }
@@ -152,7 +153,7 @@
 .room-code-label {
   font-size: 10px;
   letter-spacing: 0.1em;
-  color: rgba(242, 216, 142, 0.7);
+  color: #71694f;
   margin-bottom: 8px;
 }
 
@@ -160,20 +161,20 @@
   font-size: 28px;
   font-weight: 1000;
   letter-spacing: 0.12em;
-  color: #f2d88e;
+  color: #a65340;
   font-family: "Courier New", monospace;
   margin-bottom: 8px;
 }
 
 .room-code-hint {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #77735d;
 }
 
 .lobby-roster {
   margin-top: 28px;
   padding-top: 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(65, 78, 58, 0.25);
 }
 
 .lobby-roster.hidden {
@@ -206,19 +207,19 @@
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  color: #f7efcf;
+  color: #293f33;
 }
 
 .roster-item.host {
-  background: rgba(107, 143, 106, 0.3);
-  border-color: rgba(165, 214, 167, 0.4);
+  background: rgba(108, 128, 82, 0.18);
+  border-color: rgba(104, 122, 73, 0.4);
 }
 
 .roster-badge {
   font-size: 9px;
   font-weight: 1000;
   letter-spacing: 0.08em;
-  color: #a5d6a7;
+  color: #536b42;
   background: rgba(0, 0, 0, 0.3);
   padding: 3px 8px;
   border-radius: 3px;

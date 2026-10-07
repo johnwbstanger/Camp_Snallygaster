@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "concurrently -k \"npm:server\" \"npm:client\"",
     "client": "vite --host 0.0.0.0",
-    "server": "tsx watch server/index.ts",
+    "server": "tsx watch --tsconfig tsconfig.server.json server/index.ts",
     "build": "tsc --noEmit && vite build",
-    "start": "tsx server/index.ts",
+    "start": "tsx --tsconfig tsconfig.server.json server/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

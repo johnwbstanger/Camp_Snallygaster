@@ -58,14 +58,14 @@ app.get("/api/rooms", async (req, res) => {
 // Serve client
 const distPath = path.join(__dirname, "..", "dist", "client");
 app.use(express.static(distPath));
-app.get("*", (_req, res) => {
+app.get("/{*splat}", (_req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`\n🏕️  Camp Snallygaster server listening`);
   console.log(`   HTTP: http://0.0.0.0:${PORT}`);
-  console.log(`   WebSocket: ws://0.0.0.0:${PORT}/ws`);
+  console.log(`   WebSocket: ws://0.0.0.0:${PORT}`);
   console.log(`   Environment: ${NODE_ENV}`);
   console.log(`   Force handgun spawn: ${process.env.FORCE_HANDGUN_SPAWN === "true"}\n`);
 });

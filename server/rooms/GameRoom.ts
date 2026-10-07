@@ -51,7 +51,7 @@ export class GameRoom extends Room<GameRoomStateClass> {
   private maxPlayers = 6;
 
   async onCreate(options: { roomCode?: string } = {}) {
-    this.state = new GameRoomStateClass();
+    this.setState(new GameRoomStateClass());
     this.state.hostId = "";
     this.state.phase = "LOBBY";
     if (options.roomCode) {
