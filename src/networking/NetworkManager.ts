@@ -4,33 +4,52 @@ import type { GameRoomState } from "../../shared/GameRoomState";
 export class NetworkManager {
   private client: Client | null = null;
   private room: any = null;
+  private roomCode: string | null = null;
+  private apiBase = "";
   private onStateChange: ((state: GameRoomState) => void) | null = null;
   private onMessage: ((type: string, data: any) => void) | null = null;
 
-  constructor(
-    private wsUrl: string,
-  ) {}
+  constructor(private wsUrl = "") {}
 
   async connect(): Promise<boolean> {
     try {
-      const proto = this.wsUrl.startsWith("wss") ? "wss" : "ws";
-      const endpoint = import.meta.env.DEV
-        ? `${proto}://${location.hostname}:3001`
-        : this.wsUrl;
+      const configured = String(import.meta.env.VITE_SERVER_URL || this.wsUrl || "").replace(/\/$/, "");
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+
+      let endpoint: string;
+      if (import.meta.env.DEV) {
+        endpoint = configured || `${proto}://${location.hostname}:3001`;
+      } else if (configured) {
+        endpoint = configured.startsWith("http")
+          ? configured.replace(/^http/, "ws")
+          : configured;
+      } else {
+        endpoint = `${proto}://${location.host}`;
+      }
+
+      this.apiBase = configured
+        ? configured.replace(/^ws/, "http")
+        : import.meta.env.DEV
+          ? `${location.protocol}//${location.hostname}:3001`
+          : location.origin;
 
       this.client = new Client(endpoint);
       return true;
     } catch (error) {
-      console.error("Failed to connect:", error);
+      console.error("Failed to initialize networking:", error);
+      this.client = null;
       return false;
     }
   }
 
   async createRoom(playerName: string): Promise<string | null> {
     if (!this.client) return null;
-
     try {
-      this.room = await this.client.create("game");
+      const response = await fetch(`${this.apiBase}/api/rooms/create`, { method: "POST" });
+      if (!response.ok) throw new Error(`Room creation failed: ${response.status}`);
+      const { roomId, roomCode } = await response.json();
+      this.roomCode = roomCode;
+      this.room = await this.client.joinById(roomId);
       this.setupRoomListeners();
       this.send("JOIN", { name: playerName });
       return this.room.roomId;
@@ -40,11 +59,19 @@ export class NetworkManager {
     }
   }
 
-  async joinRoom(roomId: string, playerName: string): Promise<boolean> {
+  async joinRoom(roomCode: string, playerName: string): Promise<boolean> {
     if (!this.client) return false;
-
     try {
-      this.room = await this.client.joinById(roomId);
+      const response = await fetch(`${this.apiBase}/api/rooms`);
+      if (!response.ok) throw new Error(`Camp directory failed: ${response.status}`);
+      const rooms = await response.json();
+      const match = rooms.find(
+        (room: any) => room.metadata?.roomCode?.toUpperCase() === roomCode.trim().toUpperCase(),
+      );
+      if (!match) return false;
+
+      this.roomCode = match.metadata.roomCode;
+      this.room = await this.client.joinById(match.roomId);
       this.setupRoomListeners();
       this.send("JOIN", { name: playerName });
       return true;
@@ -57,27 +84,21 @@ export class NetworkManager {
   private setupRoomListeners() {
     if (!this.room) return;
 
-    this.room.onStateChange.once((_state: any) => {
+    this.room.onStateChange.once(() => {
       console.log("Connected to room", this.room.roomId);
     });
 
-    this.room.onStateChange((_state: any) => {
-      if (this.onStateChange) {
-        this.onStateChange(_state);
-      }
+    this.room.onStateChange((state: GameRoomState) => {
+      this.onStateChange?.(state);
     });
 
     this.room.onMessage("*", (type: string, data: any) => {
-      if (this.onMessage) {
-        this.onMessage(type, data);
-      }
+      this.onMessage?.(type, data);
     });
   }
 
   send(type: string, data: any = {}) {
-    if (this.room) {
-      this.room.send(type, data);
-    }
+    this.room?.send(type, data);
   }
 
   onRoomStateChange(callback: (state: GameRoomState) => void) {
@@ -92,9 +113,17 @@ export class NetworkManager {
     return this.room?.roomId ?? null;
   }
 
+  getRoomCode(): string | null {
+    return this.roomCode;
+  }
+
+  getSessionId(): string | null {
+    return this.room?.sessionId ?? null;
+  }
+
   leave() {
     if (this.room) {
-      this.room.leave();
+      void this.room.leave();
       this.room = null;
     }
   }

@@ -6,16 +6,17 @@
   "scripts": {
     "dev": "concurrently -k \"npm:server\" \"npm:client\"",
     "client": "vite --host 0.0.0.0",
-    "server": "tsx watch server/index.ts",
+    "server": "tsx watch --tsconfig tsconfig.server.json server/index.ts",
     "build": "tsc --noEmit && vite build",
-    "start": "tsx server/index.ts",
+    "start": "tsx --tsconfig tsconfig.server.json server/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "0.21.0",
     "@colyseus/core": "^0.15.11",
-    "@colyseus/schema": "^2.0.40",
+    "@colyseus/schema": "^2.0.37",
+    "@colyseus/ws-transport": "0.15.3",
+    "@dimforge/rapier3d-compat": "0.21.0",
     "colyseus.js": "^0.15.11",
     "express": "5.1.0",
     "three": "0.186.1",
@@ -26,11 +27,11 @@
     "@types/node": "24.5.2",
     "@types/three": "0.186.0",
     "@types/ws": "8.18.1",
-    "@vitest/ui": "^1.6.0",
+    "@vitest/ui": "^3.2.7",
     "concurrently": "9.2.1",
     "tsx": "4.20.5",
     "typescript": "5.9.2",
     "vite": "7.1.7",
-    "vitest": "^1.6.0"
+    "vitest": "^3.2.7"
   }
 }
