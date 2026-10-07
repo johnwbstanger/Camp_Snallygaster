@@ -5,38 +5,29 @@ export class NetworkManager {
   private client: Client | null = null;
   private room: any = null;
   private roomCode: string | null = null;
-  private apiBase = "";
+  private endpoint = "";
   private onStateChange: ((state: GameRoomState) => void) | null = null;
   private onMessage: ((type: string, data: any) => void) | null = null;
 
-  constructor(private wsUrl = "") {}
+  constructor(private configuredUrl = "") {}
 
   async connect(): Promise<boolean> {
     try {
-      const configured = String(import.meta.env.VITE_SERVER_URL || this.wsUrl || "").replace(/\/$/, "");
-      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const configured = String(import.meta.env.VITE_SERVER_URL || this.configuredUrl || "").replace(/\/$/, "");
+      const browserProtocol = location.protocol === "https:" ? "wss" : "ws";
 
-      let endpoint: string;
-      if (import.meta.env.DEV) {
-        endpoint = configured || `${proto}://${location.hostname}:3001`;
-      } else if (configured) {
-        endpoint = configured.startsWith("http")
-          ? configured.replace(/^http/, "ws")
-          : configured;
+      if (configured) {
+        this.endpoint = configured.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+      } else if (import.meta.env.DEV) {
+        this.endpoint = `${browserProtocol}://${location.hostname}:3001`;
       } else {
-        endpoint = `${proto}://${location.host}`;
+        this.endpoint = `${browserProtocol}://${location.host}`;
       }
 
-      this.apiBase = configured
-        ? configured.replace(/^ws/, "http")
-        : import.meta.env.DEV
-          ? `${location.protocol}//${location.hostname}:3001`
-          : location.origin;
-
-      this.client = new Client(endpoint);
+      this.client = new Client(this.endpoint);
       return true;
     } catch (error) {
-      console.error("Failed to initialize networking:", error);
+      console.error("Failed to initialize multiplayer client:", error);
       this.client = null;
       return false;
     }
@@ -44,49 +35,53 @@ export class NetworkManager {
 
   async createRoom(playerName: string): Promise<string | null> {
     if (!this.client) return null;
+
     try {
-      const response = await fetch(`${this.apiBase}/api/rooms/create`, { method: "POST" });
-      if (!response.ok) throw new Error(`Room creation failed: ${response.status}`);
-      const { roomId, roomCode } = await response.json();
+      const roomCode = this.generateRoomCode();
+      this.room = await this.client.create("game", { roomCode });
       this.roomCode = roomCode;
-      this.room = await this.client.joinById(roomId);
       this.setupRoomListeners();
       this.send("JOIN", { name: playerName });
       return this.room.roomId;
     } catch (error) {
-      console.error("Failed to create room:", error);
+      console.error("Failed to create camp:", error);
       return null;
     }
   }
 
   async joinRoom(roomCode: string, playerName: string): Promise<boolean> {
     if (!this.client) return false;
+
     try {
-      const response = await fetch(`${this.apiBase}/api/rooms`);
-      if (!response.ok) throw new Error(`Camp directory failed: ${response.status}`);
-      const rooms = await response.json();
+      const wantedCode = roomCode.trim().toUpperCase();
+      const rooms = await this.client.getAvailableRooms("game");
       const match = rooms.find(
-        (room: any) => room.metadata?.roomCode?.toUpperCase() === roomCode.trim().toUpperCase(),
+        (room: any) =>
+          String(room.metadata?.roomCode || "").toUpperCase() === wantedCode && !room.locked,
       );
+
       if (!match) return false;
 
-      this.roomCode = match.metadata.roomCode;
       this.room = await this.client.joinById(match.roomId);
+      this.roomCode = match.metadata?.roomCode ?? wantedCode;
       this.setupRoomListeners();
       this.send("JOIN", { name: playerName });
       return true;
     } catch (error) {
-      console.error("Failed to join room:", error);
+      console.error("Failed to join camp:", error);
       return false;
     }
   }
 
+  private generateRoomCode() {
+    const words = ["PINE", "LAKE", "TRAIL", "CAMP", "BEAR", "OWL", "MOSS", "FIRE"];
+    const word = words[Math.floor(Math.random() * words.length)];
+    const number = Math.floor(10 + Math.random() * 90);
+    return `${word}-${number}`;
+  }
+
   private setupRoomListeners() {
     if (!this.room) return;
-
-    this.room.onStateChange.once(() => {
-      console.log("Connected to room", this.room.roomId);
-    });
 
     this.room.onStateChange((state: GameRoomState) => {
       this.onStateChange?.(state);
@@ -114,11 +109,15 @@ export class NetworkManager {
   }
 
   getRoomCode(): string | null {
-    return this.roomCode;
+    return this.roomCode ?? this.room?.metadata?.roomCode ?? null;
   }
 
   getSessionId(): string | null {
     return this.room?.sessionId ?? null;
+  }
+
+  getEndpoint(): string {
+    return this.endpoint;
   }
 
   leave() {
