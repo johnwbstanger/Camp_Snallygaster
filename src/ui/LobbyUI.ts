@@ -83,7 +83,7 @@ export class LobbyUI {
     });
 
     // Create camp
-    const createBtn = this.container.querySelector("#create-btn");
+    const createBtn = this.container.querySelector<HTMLButtonElement>("#create-btn");
     createBtn?.addEventListener("click", async () => {
       const name = (this.container.querySelector("#create-name") as HTMLInputElement).value.trim();
       if (name) {
@@ -96,7 +96,7 @@ export class LobbyUI {
     });
 
     // Join camp
-    const joinBtn = this.container.querySelector("#join-btn");
+    const joinBtn = this.container.querySelector<HTMLButtonElement>("#join-btn");
     joinBtn?.addEventListener("click", async () => {
       const code = (this.container.querySelector("#join-code") as HTMLInputElement).value.trim().toUpperCase();
       const name = (this.container.querySelector("#join-name") as HTMLInputElement).value.trim();

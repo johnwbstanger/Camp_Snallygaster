@@ -4,6 +4,7 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "experimentalDecorators": true,
     "strict": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -19,12 +20,5 @@
       "vite/client"
     ]
   },
-  "include": [
-    "src",
-    "server",
-    "shared"
-  ],
-  "exclude": [
-    "src/game/Game.ts"
-  ]
+  "include": ["src/main.ts"]
 }

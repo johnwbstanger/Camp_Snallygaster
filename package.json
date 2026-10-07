@@ -15,7 +15,7 @@
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.21.0",
     "@colyseus/core": "^0.15.11",
-    "@colyseus/schema": "^2.0.40",
+    "@colyseus/schema": "^2.0.37",
     "@colyseus/ws-transport": "0.15.3",
     "colyseus.js": "^0.15.11",
     "express": "5.1.0",

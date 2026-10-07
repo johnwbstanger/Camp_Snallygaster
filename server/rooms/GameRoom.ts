@@ -1,8 +1,7 @@
 import { Room, Client } from "@colyseus/core";
 import RAPIER from "@dimforge/rapier3d-compat";
-import type { GameRoomState, PlayerState, CamperState } from "../shared/GameRoomState.js";
-import { GameRoomState as GameRoomStateClass, Vec3, PlayerState as PlayerStateClass, CamperState as CamperStateClass, MonsterState as MonsterStateClass, DoorState as DoorStateClass, GunState as GunStateClass } from "../shared/GameRoomState.js";
-import { generateRoomCode } from "../shared/utils.js";
+import type { GameRoomState, PlayerState, CamperState } from "../../shared/GameRoomState.js";
+import { GameRoomState as GameRoomStateClass, Vec3, PlayerState as PlayerStateClass, CamperState as CamperStateClass, MonsterState as MonsterStateClass, DoorState as DoorStateClass, GunState as GunStateClass } from "../../shared/GameRoomState.js";
 
 let RAPIER_READY = false;
 
@@ -51,10 +50,13 @@ export class GameRoom extends Room<GameRoomStateClass> {
   private roundStartedAt = 0;
   private maxPlayers = 6;
 
-  async onCreate() {
+  async onCreate(options: { roomCode?: string } = {}) {
     this.state = new GameRoomStateClass();
     this.state.hostId = "";
     this.state.phase = "LOBBY";
+    if (options.roomCode) {
+      await this.setMetadata({ roomCode: options.roomCode });
+    }
 
     if (RAPIER_READY) {
       this.physics = new RAPIER.World({ x: 0, y: -18, z: 0 });
