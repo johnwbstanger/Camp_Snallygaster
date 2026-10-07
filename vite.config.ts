@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   // Use relative production asset paths so the client works under repository subpaths.
-  base: './',
+  base: '/Camp_Snallygaster/',
   server: {
     port: 5173,
     proxy: {
