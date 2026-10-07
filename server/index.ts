@@ -2,10 +2,10 @@ import express from "express";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Server, LobbyRoom, RelayRoom } from "@colyseus/core";
+import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws";
-import { GameRoom } from "./rooms/GameRoom";
-import { generateRoomCode } from "../shared/utils";
+import { GameRoom } from "./rooms/GameRoom.js";
+import { generateRoomCode } from "../shared/utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,9 +24,6 @@ const gameServer = new Server({
 
 // Register game room
 gameServer.define("game", GameRoom);
-
-// Lobby room for matchmaking
-gameServer.define("lobby", LobbyRoom);
 
 // REST API for room management
 app.use(express.json());
@@ -63,13 +60,14 @@ app.get("/api/rooms", async (req, res) => {
 // Serve client
 const distPath = path.join(__dirname, "..", "dist", "client");
 app.use(express.static(distPath));
-app.use((_req, res) => {
+app.get("*", (_req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
 httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`Camp Snallygaster server listening on http://0.0.0.0:${PORT}`);
-  console.log(`WebSocket endpoint: ws://0.0.0.0:${PORT}/ws`);
-  console.log(`Environment: ${NODE_ENV}`);
-  console.log(`Force handgun spawn: ${process.env.FORCE_HANDGUN_SPAWN === "true"}`);
+  console.log(`\n🏕️  Camp Snallygaster server listening`);
+  console.log(`   HTTP: http://0.0.0.0:${PORT}`);
+  console.log(`   WebSocket: ws://0.0.0.0:${PORT}/ws`);
+  console.log(`   Environment: ${NODE_ENV}`);
+  console.log(`   Force handgun spawn: ${process.env.FORCE_HANDGUN_SPAWN === "true"}\n`);
 });
