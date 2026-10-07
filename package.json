@@ -8,6 +8,7 @@
     "client": "vite --host 0.0.0.0",
     "server": "tsx watch --tsconfig tsconfig.server.json server/index.ts",
     "build": "tsc --noEmit && vite build",
+    "build:client": "vite build",
     "start": "tsx --tsconfig tsconfig.server.json server/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
