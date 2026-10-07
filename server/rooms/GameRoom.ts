@@ -6,7 +6,7 @@ import { generateRoomCode } from "../shared/utils.js";
 
 let RAPIER_READY = false;
 
-RAP IER.init().then(() => {
+RAPIER.init().then(() => {
   RAPIER_READY = true;
 });
 

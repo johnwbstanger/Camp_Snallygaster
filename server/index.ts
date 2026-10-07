@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "@colyseus/core";
-import { WebSocketTransport } from "@colyseus/ws";
+import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GameRoom } from "./rooms/GameRoom.js";
 import { generateRoomCode } from "../shared/utils.js";
 
@@ -32,9 +32,9 @@ app.post("/api/rooms/create", async (req, res) => {
   try {
     const roomCode = generateRoomCode();
     const room = await gameServer.create("game", {
-      roomCode,
       autoDispose: true,
     });
+    await room.setMetadata({ roomCode });
     res.json({
       roomId: room.roomId,
       roomCode,

@@ -64,6 +64,10 @@ export class LobbyUI {
       </div>
     `;
 
+    const roomCode = new URLSearchParams(window.location.search).get("room");
+    const codeInput = this.container.querySelector<HTMLInputElement>("#join-code");
+    if (roomCode && codeInput) codeInput.value = roomCode;
+
     this.attachEventListeners();
   }
 
@@ -159,6 +163,14 @@ export class LobbyUI {
       status.textContent = message;
       status.className = `lobby-status ${isError ? "error" : "success"}`;
     }
+
+    if (isError) {
+      const button = this.container.querySelector<HTMLButtonElement>(`#${tab}-btn`);
+      if (button) {
+        button.disabled = false;
+        button.textContent = tab === "create" ? "CREATE CAMP" : "JOIN CAMP";
+      }
+    }
   }
 
   setRoomCode(code: string) {
@@ -169,8 +181,21 @@ export class LobbyUI {
           <div class="room-code-label">Camp Code</div>
           <div class="room-code">${code}</div>
           <div class="room-code-hint">Share this code with your friends</div>
+          <button id="copy-invite-btn" class="lobby-btn" type="button">COPY INVITE LINK</button>
         </div>
       `;
+
+      status.querySelector<HTMLButtonElement>("#copy-invite-btn")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget as HTMLButtonElement;
+        const invite = new URL(window.location.href);
+        invite.searchParams.set("room", code);
+        try {
+          await navigator.clipboard.writeText(invite.toString());
+          button.textContent = "LINK COPIED";
+        } catch {
+          button.textContent = invite.toString();
+        }
+      });
     }
   }
 

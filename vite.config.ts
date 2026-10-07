@@ -5,8 +5,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: 'ws://localhost:3001',
         ws: true
+      },
+      '/api': {
+        target: 'http://localhost:3001',
       }
     }
   },
@@ -16,6 +19,6 @@ export default defineConfig({
     minify: 'terser'
   },
   optimizeDeps: {
-    include: ['three', 'cannon-es']
+    include: ['three']
   }
 });

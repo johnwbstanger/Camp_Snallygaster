@@ -4,6 +4,7 @@ import type { GameRoomState } from "../../shared/GameRoomState";
 export class NetworkManager {
   private client: Client | null = null;
   private room: any = null;
+  private roomCode: string | null = null;
   private onStateChange: ((state: GameRoomState) => void) | null = null;
   private onMessage: ((type: string, data: any) => void) | null = null;
 
@@ -13,10 +14,10 @@ export class NetworkManager {
 
   async connect(): Promise<boolean> {
     try {
-      const proto = this.wsUrl.startsWith("wss") ? "wss" : "ws";
+      const proto = location.protocol === "https:" ? "wss" : "ws";
       const endpoint = import.meta.env.DEV
         ? `${proto}://${location.hostname}:3001`
-        : this.wsUrl;
+        : `${proto}://${location.host}`;
 
       this.client = new Client(endpoint);
       return true;
@@ -30,7 +31,11 @@ export class NetworkManager {
     if (!this.client) return null;
 
     try {
-      this.room = await this.client.create("game");
+      const response = await fetch("/api/rooms/create", { method: "POST" });
+      if (!response.ok) throw new Error(`Room creation failed: ${response.status}`);
+      const { roomId, roomCode } = await response.json();
+      this.roomCode = roomCode;
+      this.room = await this.client.joinById(roomId);
       this.setupRoomListeners();
       this.send("JOIN", { name: playerName });
       return this.room.roomId;
@@ -40,11 +45,20 @@ export class NetworkManager {
     }
   }
 
-  async joinRoom(roomId: string, playerName: string): Promise<boolean> {
+  async joinRoom(roomCode: string, playerName: string): Promise<boolean> {
     if (!this.client) return false;
 
     try {
-      this.room = await this.client.joinById(roomId);
+      const response = await fetch("/api/rooms");
+      if (!response.ok) throw new Error(`Camp directory failed: ${response.status}`);
+      const rooms = await response.json();
+      const match = rooms.find(
+        (room: any) => room.metadata?.roomCode?.toUpperCase() === roomCode.toUpperCase(),
+      );
+      if (!match) return false;
+
+      this.roomCode = match.metadata.roomCode;
+      this.room = await this.client.joinById(match.roomId);
       this.setupRoomListeners();
       this.send("JOIN", { name: playerName });
       return true;
@@ -90,6 +104,14 @@ export class NetworkManager {
 
   getRoomId(): string | null {
     return this.room?.roomId ?? null;
+  }
+
+  getRoomCode(): string | null {
+    return this.roomCode;
+  }
+
+  getSessionId(): string | null {
+    return this.room?.sessionId ?? null;
   }
 
   leave() {
