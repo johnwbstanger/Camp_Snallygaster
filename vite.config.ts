@@ -1,21 +1,19 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from "vite";
 
 export default defineConfig({
+  base: "./",
   server: {
+    host: "0.0.0.0",
     port: 5173,
-    proxy: {
-      '/ws': {
-        target: 'ws://localhost:3000',
-        ws: true
-      }
-    }
+    strictPort: true,
   },
   build: {
-    outDir: 'dist/client',
-    target: 'es2020',
-    minify: 'terser'
+    outDir: "dist/client",
+    target: "es2020",
+    minify: "esbuild",
+    sourcemap: true,
   },
   optimizeDeps: {
-    include: ['three', 'cannon-es']
-  }
+    include: ["three", "cannon-es"],
+  },
 });
