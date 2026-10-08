@@ -1,13 +1,22 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
+import type { DoorState } from "../../shared/protocol";
+
+type DoorVisual = {
+  pivot: THREE.Group;
+  mesh: THREE.Mesh;
+  body: CANNON.Body;
+  open: boolean;
+};
 
 export class CampWorld {
   readonly scene = new THREE.Scene();
+  readonly interactables: THREE.Object3D[] = [];
+
+  private readonly doors = new Map<string, DoorVisual>();
   private readonly wood = new THREE.MeshStandardMaterial({ color: 0x76513c, roughness: 0.92 });
   private readonly darkWood = new THREE.MeshStandardMaterial({ color: 0x3d3028, roughness: 0.97 });
   private readonly cream = new THREE.MeshStandardMaterial({ color: 0xe7d9b7, roughness: 0.9 });
-  private readonly teal = new THREE.MeshStandardMaterial({ color: 0x447d70, roughness: 0.8 });
-  private readonly orange = new THREE.MeshStandardMaterial({ color: 0xc96e45, roughness: 0.86 });
   private readonly mustard = new THREE.MeshStandardMaterial({ color: 0xd9aa42, roughness: 0.82 });
   private readonly metal = new THREE.MeshStandardMaterial({ color: 0x676d69, roughness: 0.5, metalness: 0.35 });
 
@@ -21,9 +30,29 @@ export class CampWorld {
     this.addTrees();
   }
 
+  updateDoors(states: DoorState[]) {
+    for (const state of states ?? []) this.applyDoorState(state.id, state.open);
+  }
+
+  toggleLocalDoor(id: string) {
+    const door = this.doors.get(id);
+    if (!door) return false;
+    this.applyDoorState(id, !door.open);
+    return true;
+  }
+
+  private applyDoorState(id: string, open: boolean) {
+    const door = this.doors.get(id);
+    if (!door) return;
+    door.open = open;
+    door.pivot.rotation.y = open ? -Math.PI * 0.46 : 0;
+    door.body.collisionResponse = !open;
+    door.body.wakeUp();
+    door.mesh.userData.prompt = open ? "CLOSE DOOR" : "OPEN DOOR";
+  }
+
   private addLights() {
     this.scene.add(new THREE.HemisphereLight(0xf0d9a6, 0x142019, this.mobile ? 1.65 : 2.0));
-
     const sun = new THREE.DirectionalLight(0xffcf7a, this.mobile ? 1.0 : 1.35);
     sun.position.set(-36, 42, 22);
     sun.castShadow = !this.mobile;
@@ -79,17 +108,16 @@ export class CampWorld {
   }
 
   private addCamp() {
-    this.addCabin("DINING HALL", 0, -28, 21, 5.4, 11, 0x7c5038, 0x342923, true);
-    this.addCabin("CABIN A", -23, 3, 10, 4.1, 7.5, 0x8f5b40, 0x463128);
-    this.addCabin("CABIN B", 23, 3, 10, 4.1, 7.5, 0x8f5b40, 0x463128);
-    this.addCabin("BATH HOUSE", -27, -23, 9, 3.7, 7, 0x66786d, 0x33463c);
-    this.addCabin("ARTS & CRAFTS", 27, -23, 10, 4, 7, 0xa96846, 0x52362b);
-    this.addCabin("DIRECTOR", 0, 12, 9, 3.8, 7, 0x704c38, 0x3a2b24);
-    this.addCabin("CABIN C", -45, 13, 10, 4, 7.5, 0x78523d, 0x3e3029);
-    this.addCabin("CABIN D", 45, 13, 10, 4, 7.5, 0x78523d, 0x3e3029);
-    this.addCabin("INFIRMARY", -43, -40, 11, 4, 8, 0x6b8176, 0x35483f);
-    this.addCabin("MAINTENANCE", 43, -40, 12, 4.2, 8, 0x595d52, 0x30332d);
-
+    this.addCabin("DINING HALL", "door:dining", 0, -28, 21, 5.4, 11, 0x7c5038, 0x342923, true);
+    this.addCabin("CABIN A", "door:cabin-a", -23, 3, 10, 4.1, 7.5, 0x8f5b40, 0x463128);
+    this.addCabin("CABIN B", "door:cabin-b", 23, 3, 10, 4.1, 7.5, 0x8f5b40, 0x463128);
+    this.addCabin("BATH HOUSE", "door:bath-house", -27, -23, 9, 3.7, 7, 0x66786d, 0x33463c);
+    this.addCabin("ARTS & CRAFTS", "door:arts-crafts", 27, -23, 10, 4, 7, 0xa96846, 0x52362b);
+    this.addCabin("DIRECTOR", "door:director", 0, 12, 9, 3.8, 7, 0x704c38, 0x3a2b24);
+    this.addCabin("CABIN C", "door:cabin-c", -45, 13, 10, 4, 7.5, 0x78523d, 0x3e3029);
+    this.addCabin("CABIN D", "door:cabin-d", 45, 13, 10, 4, 7.5, 0x78523d, 0x3e3029);
+    this.addCabin("INFIRMARY", "door:infirmary", -43, -40, 11, 4, 8, 0x6b8176, 0x35483f);
+    this.addCabin("MAINTENANCE", "door:maintenance", 43, -40, 12, 4.2, 8, 0x595d52, 0x30332d);
     this.addBus();
     this.addFirepit();
     this.addEntranceArch();
@@ -97,6 +125,7 @@ export class CampWorld {
 
   private addCabin(
     name: string,
+    doorId: string,
     x: number,
     z: number,
     width: number,
@@ -108,22 +137,49 @@ export class CampWorld {
   ) {
     const group = new THREE.Group();
     group.position.set(x, 0, z);
-
-    const foundation = new THREE.Mesh(
-      new THREE.BoxGeometry(width + 0.4, 0.35, depth + 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x625844, roughness: 1 }),
-    );
-    foundation.position.y = 0.18;
-    group.add(foundation);
-
+    const floorY = 0.34;
+    const wallThickness = 0.24;
+    const doorWidth = lodge ? 1.95 : 1.65;
+    const doorHeight = 2.5;
+    const wallY = floorY + height / 2;
     const wallMaterial = new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.9 });
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), wallMaterial);
-    wall.position.y = height / 2 + 0.35;
-    wall.castShadow = !this.mobile;
-    wall.receiveShadow = !this.mobile;
-    group.add(wall);
-
     const roofMaterial = new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.97 });
+
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(width, 0.22, depth), this.wood);
+    floor.position.y = floorY - 0.11;
+    floor.receiveShadow = !this.mobile;
+    group.add(floor);
+
+    const addWall = (geometry: THREE.BoxGeometry, localX: number, localY: number, localZ: number) => {
+      const wall = new THREE.Mesh(geometry, wallMaterial);
+      wall.position.set(localX, localY, localZ);
+      wall.castShadow = !this.mobile;
+      wall.receiveShadow = !this.mobile;
+      group.add(wall);
+    };
+
+    addWall(new THREE.BoxGeometry(width, height, wallThickness), 0, wallY, -depth / 2);
+    addWall(new THREE.BoxGeometry(wallThickness, height, depth), -width / 2, wallY, 0);
+    addWall(new THREE.BoxGeometry(wallThickness, height, depth), width / 2, wallY, 0);
+
+    const frontSegmentWidth = (width - doorWidth) / 2;
+    const frontOffset = doorWidth / 2 + frontSegmentWidth / 2;
+    addWall(new THREE.BoxGeometry(frontSegmentWidth, height, wallThickness), -frontOffset, wallY, depth / 2);
+    addWall(new THREE.BoxGeometry(frontSegmentWidth, height, wallThickness), frontOffset, wallY, depth / 2);
+    const headerHeight = Math.max(0.4, height - doorHeight);
+    addWall(
+      new THREE.BoxGeometry(doorWidth, headerHeight, wallThickness),
+      0,
+      floorY + doorHeight + headerHeight / 2,
+      depth / 2,
+    );
+
+    this.addStaticBox(x, wallY, z - depth / 2, width / 2, height / 2, wallThickness / 2);
+    this.addStaticBox(x - width / 2, wallY, z, wallThickness / 2, height / 2, depth / 2);
+    this.addStaticBox(x + width / 2, wallY, z, wallThickness / 2, height / 2, depth / 2);
+    this.addStaticBox(x - frontOffset, wallY, z + depth / 2, frontSegmentWidth / 2, height / 2, wallThickness / 2);
+    this.addStaticBox(x + frontOffset, wallY, z + depth / 2, frontSegmentWidth / 2, height / 2, wallThickness / 2);
+
     const roofDepth = depth * 0.6 + 0.55;
     for (const side of [-1, 1]) {
       const panel = new THREE.Mesh(new THREE.BoxGeometry(width + 0.8, 0.22, roofDepth), roofMaterial);
@@ -135,39 +191,31 @@ export class CampWorld {
 
     const porchWidth = lodge ? Math.min(width * 0.78, 13) : Math.min(width * 0.66, 6.2);
     const porch = new THREE.Mesh(new THREE.BoxGeometry(porchWidth, 0.2, 2.2), this.wood);
-    porch.position.set(0, 0.4, depth / 2 + 1.0);
+    porch.position.set(0, 0.3, depth / 2 + 1.0);
     porch.receiveShadow = !this.mobile;
     group.add(porch);
 
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.35, 2.45, 0.16), this.darkWood);
-    door.position.set(0, 1.65, depth / 2 + 0.09);
-    group.add(door);
+    for (const px of [-porchWidth / 2 + 0.35, porchWidth / 2 - 0.35]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.7, 0.18), this.darkWood);
+      post.position.set(px, 1.65, depth / 2 + 1.55);
+      group.add(post);
+    }
 
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 0.2), this.cream);
-    trim.position.set(0, 2.95, depth / 2 + 0.12);
-    group.add(trim);
-
-    const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x6f9692, roughness: 0.3, metalness: 0.08 });
+    const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x6f9692, roughness: 0.28, metalness: 0.08 });
     const windowCount = lodge ? 4 : 2;
     for (let i = 0; i < windowCount; i += 1) {
       const t = i / (windowCount - 1);
       const wx = THREE.MathUtils.lerp(-width * 0.34, width * 0.34, t);
-      if (Math.abs(wx) < 1.1) continue;
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.15, 0.18), this.cream);
-      frame.position.set(wx, 2.15, depth / 2 + 0.1);
-      const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.9), windowMaterial);
-      glass.position.set(wx, 2.15, depth / 2 + 0.2);
+      if (Math.abs(wx) < doorWidth) continue;
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.15, 0.16), this.cream);
+      frame.position.set(wx, 2.15, depth / 2 + 0.14);
+      const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.08, 0.88), windowMaterial);
+      glass.position.set(wx, 2.15, depth / 2 + 0.23);
       group.add(frame, glass);
     }
 
-    for (const px of [-porchWidth / 2 + 0.35, porchWidth / 2 - 0.35]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.7, 0.18), this.darkWood);
-      post.position.set(px, 1.7, depth / 2 + 1.55);
-      group.add(post);
-    }
-
     const sign = this.makeSign(name, lodge ? 4.8 : 3.6, lodge ? 1.05 : 0.82);
-    sign.position.set(0, height - 0.15, depth / 2 + 0.24);
+    sign.position.set(0, height - 0.1, depth / 2 + 0.26);
     group.add(sign);
 
     if (lodge) {
@@ -177,16 +225,83 @@ export class CampWorld {
       );
       chimney.position.set(width * 0.3, height + 1.55, -0.8);
       group.add(chimney);
+      this.addDiningInterior(group, width, depth);
+    } else if (name.startsWith("CABIN")) {
+      this.addCabinInterior(group, width, depth);
+    } else {
+      this.addUtilityInterior(group, width, depth);
     }
+
+    const pivot = new THREE.Group();
+    pivot.position.set(-doorWidth / 2, floorY, depth / 2 + 0.16);
+    const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, 0.14), this.darkWood);
+    door.position.set(doorWidth / 2, doorHeight / 2, 0);
+    door.userData.targetId = doorId;
+    door.userData.prompt = "OPEN DOOR";
+    pivot.add(door);
+    group.add(pivot);
+    this.interactables.push(door);
 
     this.scene.add(group);
 
-    const collider = new CANNON.Body({
+    const doorBody = new CANNON.Body({
       mass: 0,
-      shape: new CANNON.Box(new CANNON.Vec3(width * 0.47, height * 0.48, depth * 0.46)),
+      shape: new CANNON.Box(new CANNON.Vec3(doorWidth / 2, doorHeight / 2, 0.1)),
     });
-    collider.position.set(x, height * 0.5 + 0.35, z);
-    this.physics.addBody(collider);
+    doorBody.position.set(x, floorY + doorHeight / 2, z + depth / 2 + 0.16);
+    this.physics.addBody(doorBody);
+    this.doors.set(doorId, { pivot, mesh: door, body: doorBody, open: false });
+  }
+
+  private addDiningInterior(group: THREE.Group, width: number, depth: number) {
+    for (const x of [-width * 0.26, 0, width * 0.26]) {
+      const table = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.14, 1.05), this.wood);
+      table.position.set(x, 1.0, -0.6);
+      group.add(table);
+      for (const side of [-1, 1]) {
+        const bench = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.12, 0.35), this.wood);
+        bench.position.set(x, 0.58, -0.6 + side * 0.92);
+        group.add(bench);
+      }
+    }
+    const serving = new THREE.Mesh(new THREE.BoxGeometry(width * 0.6, 1.0, 0.75), this.darkWood);
+    serving.position.set(0, 0.75, -depth / 2 + 0.75);
+    group.add(serving);
+  }
+
+  private addCabinInterior(group: THREE.Group, width: number, depth: number) {
+    const bunkMaterial = new THREE.MeshStandardMaterial({ color: 0x82573f, roughness: 0.95 });
+    for (const side of [-1, 1]) {
+      const x = side * (width / 2 - 1.0);
+      for (const z of [-depth * 0.2, depth * 0.2]) {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.55, 2.1), bunkMaterial);
+        frame.position.set(x, 0.95, z);
+        group.add(frame);
+        for (const y of [0.48, 1.25]) {
+          const mattress = new THREE.Mesh(
+            new THREE.BoxGeometry(1.0, 0.14, 1.85),
+            new THREE.MeshStandardMaterial({ color: y < 1 ? 0xd4ba7c : 0x668f82, roughness: 0.95 }),
+          );
+          mattress.position.set(x, y, z);
+          group.add(mattress);
+        }
+      }
+    }
+  }
+
+  private addUtilityInterior(group: THREE.Group, width: number, depth: number) {
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(Math.min(width * 0.62, 5), 1.05, 0.75), this.wood);
+    counter.position.set(0, 0.75, -depth / 2 + 0.72);
+    group.add(counter);
+    const cabinet = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.8, 0.65), this.darkWood);
+    cabinet.position.set(-width / 2 + 1.05, 1.05, -depth / 2 + 0.7);
+    group.add(cabinet);
+  }
+
+  private addStaticBox(x: number, y: number, z: number, hx: number, hy: number, hz: number) {
+    const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(hx, hy, hz)) });
+    body.position.set(x, y, z);
+    this.physics.addBody(body);
   }
 
   private addBus() {
@@ -226,10 +341,7 @@ export class CampWorld {
 
     bus.position.set(0, 0, 31);
     this.scene.add(bus);
-
-    const collider = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(4.45, 1.6, 1.58)) });
-    collider.position.set(0.45, 1.6, 31);
-    this.physics.addBody(collider);
+    this.addStaticBox(0.45, 1.6, 31, 4.45, 1.6, 1.58);
   }
 
   private addFirepit() {
@@ -298,17 +410,14 @@ export class CampWorld {
     const group = new THREE.Group();
     group.position.set(x, 0, z);
     group.rotation.y = rotation;
-
     const top = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.18, 1.05), this.wood);
     top.position.y = 1.25;
     group.add(top);
-
     for (const side of [-1, 1]) {
       const bench = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.16, 0.44), this.wood);
       bench.position.set(0, 0.72, side * 1.05);
       group.add(bench);
     }
-
     for (const xLeg of [-1.45, 1.45]) {
       for (const side of [-1, 1]) {
         const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.15, 0.18), this.darkWood);
@@ -382,13 +491,11 @@ export class CampWorld {
     const group = new THREE.Group();
     group.position.set(x, 0, z);
     group.rotation.y = rotation;
-
     for (const side of [-1, 1]) {
       const rack = new THREE.Mesh(new THREE.BoxGeometry(0.18, 3.2, 0.18), this.darkWood);
       rack.position.set(side * 1.6, 1.6, 0);
       group.add(rack);
     }
-
     for (let level = 0; level < 2; level += 1) {
       const canoe = new THREE.Mesh(
         new THREE.CapsuleGeometry(0.42, 3.1, 5, this.mobile ? 8 : 14),
@@ -429,18 +536,9 @@ export class CampWorld {
       const z = Math.sin(angle) * radius;
       const scale = 0.84 + (i % 6) * 0.065;
 
-      matrix.compose(
-        new THREE.Vector3(x, 2.6 * scale, z),
-        quaternion,
-        new THREE.Vector3(scale, scale, scale),
-      );
+      matrix.compose(new THREE.Vector3(x, 2.6 * scale, z), quaternion, new THREE.Vector3(scale, scale, scale));
       trunks.setMatrixAt(i, matrix);
-
-      matrix.compose(
-        new THREE.Vector3(x, 7.4 * scale, z),
-        quaternion,
-        new THREE.Vector3(scale, scale, scale),
-      );
+      matrix.compose(new THREE.Vector3(x, 7.4 * scale, z), quaternion, new THREE.Vector3(scale, scale, scale));
       crowns.setMatrixAt(i, matrix);
 
       if (i % 5 === 0 && radius < 92) {
