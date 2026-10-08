@@ -1,3 +1,5 @@
+import type { MonsterKind } from "./monsterLibrary";
+
 export type PlayerPose = {
   x: number;
   y: number;
@@ -28,7 +30,7 @@ export type SharedRoundState = {
   phase: "LOBBY" | "ACTIVE" | "WON" | "LOST";
   campers: CamperState[];
   doors: DoorState[];
-  monster: { x: number; y: number; z: number; awake: boolean };
+  monster: { kind: MonsterKind; x: number; y: number; z: number; awake: boolean };
   campersSafe: number;
   campersFound: number;
 };

@@ -1,5 +1,11 @@
 import * as THREE from "three";
 import type { SharedRoundState, DoorState } from "../../shared/protocol";
+import {
+  chooseRandomMonster,
+  getMonsterDefinition,
+  type MonsterDefinition,
+  type MonsterKind,
+} from "../../shared/monsterLibrary";
 import { hasCampLineOfSight, MONSTER_HOME } from "../../shared/campVision";
 import { addCampDetailKit } from "./CampDetailKit";
 
@@ -9,6 +15,7 @@ export type ObjectiveStatus = {
   total: number;
   prompt: string;
   monsterAwake: boolean;
+  monsterName: string;
   caught: boolean;
   complete: boolean;
 };
@@ -44,6 +51,8 @@ export class ObjectiveSystem {
   private camperById = new Map<string, Camper>();
   private monster = new THREE.Group();
   private monsterAwake = false;
+  private monsterDefinition: MonsterDefinition = chooseRandomMonster();
+  private monsterKind: MonsterKind = this.monsterDefinition.id;
   private caught = false;
   private complete = false;
 
@@ -71,6 +80,7 @@ export class ObjectiveSystem {
       total: this.campers.length,
       prompt: this.interactionPrompt(player),
       monsterAwake: this.monsterAwake,
+      monsterName: this.monsterDefinition.name,
       caught: this.caught,
       complete: this.complete,
     };
@@ -78,7 +88,16 @@ export class ObjectiveSystem {
 
   updateShared(player: THREE.Vector3, state: SharedRoundState | null, dt = 1 / 60): ObjectiveStatus {
     if (!state) {
-      return { found: 0, safe: 0, total: this.campers.length, prompt: "", monsterAwake: false, caught: false, complete: false };
+      return {
+        found: 0,
+        safe: 0,
+        total: this.campers.length,
+        prompt: "",
+        monsterAwake: false,
+        monsterName: this.monsterDefinition.name,
+        caught: false,
+        complete: false,
+      };
     }
 
     for (const sharedCamper of state.campers) {
@@ -100,6 +119,7 @@ export class ObjectiveSystem {
     }
 
     this.updateBoarding(dt);
+    this.setMonsterKind(state.monster.kind ?? this.monsterKind);
     this.monsterAwake = state.monster.awake;
     this.monster.visible = state.monster.awake;
     this.monster.position.lerp(new THREE.Vector3(state.monster.x, state.monster.y, state.monster.z), 0.58);
@@ -113,6 +133,7 @@ export class ObjectiveSystem {
       total: state.campers.length,
       prompt: this.interactionPrompt(player),
       monsterAwake: state.monster.awake,
+      monsterName: this.monsterDefinition.name,
       caught: state.phase === "LOST",
       complete: this.complete,
     };
@@ -120,6 +141,7 @@ export class ObjectiveSystem {
 
   destroy() {
     for (const camper of this.campers) camper.mesh.removeFromParent();
+    this.disposeMonsterVisuals();
     this.monster.removeFromParent();
   }
 
@@ -232,26 +254,143 @@ export class ObjectiveSystem {
   }
 
   private createMonster() {
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.62, 1.8, 5, 10),
-      new THREE.MeshStandardMaterial({ color: 0x111816, roughness: 0.92 }),
-    );
-    body.position.y = 1.4;
-    const hood = new THREE.Mesh(
-      new THREE.ConeGeometry(0.8, 1.25, 10),
-      new THREE.MeshStandardMaterial({ color: 0x0a0d0c, roughness: 1 }),
-    );
-    hood.position.y = 2.65;
-    hood.rotation.x = Math.PI;
-    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xb79cff });
-    const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), eyeMaterial);
-    const rightEye = leftEye.clone();
-    leftEye.position.set(-0.16, 2.53, 0.62);
-    rightEye.position.set(0.16, 2.53, 0.62);
-    this.monster.add(body, hood, leftEye, rightEye);
+    this.monster.name = "round-monster";
     this.monster.position.set(MONSTER_HOME.x, MONSTER_HOME.y, MONSTER_HOME.z);
     this.monster.visible = false;
     this.scene.add(this.monster);
+    this.rebuildMonsterVisual();
+  }
+
+  private setMonsterKind(kind: MonsterKind) {
+    if (kind === this.monsterKind) return;
+    this.monsterKind = kind;
+    this.monsterDefinition = getMonsterDefinition(kind);
+    this.rebuildMonsterVisual();
+  }
+
+  private rebuildMonsterVisual() {
+    this.disposeMonsterVisuals();
+    const definition = this.monsterDefinition;
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: definition.bodyColor, roughness: 0.9 });
+    const accentMaterial = new THREE.MeshStandardMaterial({ color: definition.accentColor, roughness: 0.82 });
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: definition.eyeColor });
+
+    const addEyes = (y: number, z: number, spread: number, size = 0.055) => {
+      for (const side of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), eyeMaterial);
+        eye.position.set(side * spread, y, z);
+        this.monster.add(eye);
+      }
+    };
+
+    if (definition.archetype === "winged") {
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.48, 1.55, 6, 12), bodyMaterial);
+      torso.position.y = 1.45;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), bodyMaterial);
+      head.position.set(0, 2.58, 0.16);
+      const beak = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.8, 8), accentMaterial);
+      beak.rotation.x = Math.PI / 2;
+      beak.position.set(0, 2.52, 0.66);
+      this.monster.add(torso, head, beak);
+      for (const side of [-1, 1]) {
+        const wing = new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.7, 3), accentMaterial);
+        wing.rotation.z = side * 1.12;
+        wing.position.set(side * 1.0, 1.75, -0.05);
+        this.monster.add(wing);
+      }
+      addEyes(2.64, 0.49, 0.14, 0.052);
+    } else if (definition.archetype === "feline") {
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 1.45, 6, 12), bodyMaterial);
+      torso.rotation.z = Math.PI / 2;
+      torso.position.set(0, 0.92, 0);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.43, 16, 12), accentMaterial);
+      head.position.set(0, 1.08, 0.92);
+      const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.24, 0.48), bodyMaterial);
+      muzzle.position.set(0, 0.98, 1.25);
+      this.monster.add(torso, head, muzzle);
+      for (const side of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.4, 4), accentMaterial);
+        ear.position.set(side * 0.24, 1.48, 0.88);
+        this.monster.add(ear);
+        for (const front of [-1, 1]) {
+          const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.52, 4, 8), bodyMaterial);
+          leg.position.set(side * 0.42, 0.43, front * 0.47);
+          this.monster.add(leg);
+        }
+      }
+      const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 1.6, 9), accentMaterial);
+      tail.rotation.x = Math.PI / 2.7;
+      tail.position.set(0, 1.06, -1.0);
+      this.monster.add(tail);
+      addEyes(1.14, 1.27, 0.16, 0.05);
+    } else if (definition.archetype === "brute") {
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.72, 1.55, 6, 14), bodyMaterial);
+      torso.position.y = 1.55;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 16, 12), accentMaterial);
+      head.position.set(0, 2.8, 0.1);
+      this.monster.add(torso, head);
+      for (const side of [-1, 1]) {
+        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 1.35, 5, 10), bodyMaterial);
+        arm.position.set(side * 0.82, 1.5, 0);
+        arm.rotation.z = side * 0.18;
+        const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.95, 5, 10), accentMaterial);
+        leg.position.set(side * 0.3, 0.42, 0);
+        this.monster.add(arm, leg);
+      }
+      addEyes(2.88, 0.52, 0.17, 0.045);
+    } else if (definition.archetype === "stalker") {
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 1.45, 5, 10), bodyMaterial);
+      torso.position.y = 1.35;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10), accentMaterial);
+      head.position.set(0, 2.42, 0.18);
+      this.monster.add(torso, head);
+      for (const side of [-1, 1]) {
+        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 1.72, 4, 8), bodyMaterial);
+        arm.position.set(side * 0.48, 1.05, 0.16);
+        arm.rotation.z = side * 0.12;
+        const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 1.45, 4, 8), bodyMaterial);
+        leg.position.set(side * 0.2, 0.25, -0.06);
+        this.monster.add(arm, leg);
+      }
+      addEyes(2.48, 0.5, 0.12, 0.043);
+    } else {
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 1.65, 6, 12), bodyMaterial);
+      torso.position.y = 1.45;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.43, 16, 12), accentMaterial);
+      head.position.set(0, 2.55, 0.18);
+      const snout = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.25, 0.58), bodyMaterial);
+      snout.position.set(0, 2.45, 0.58);
+      this.monster.add(torso, head, snout);
+      for (const side of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.48, 4), accentMaterial);
+        ear.position.set(side * 0.24, 2.94, 0.12);
+        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 1.15, 5, 10), bodyMaterial);
+        arm.position.set(side * 0.64, 1.4, 0.08);
+        arm.rotation.z = side * 0.18;
+        this.monster.add(ear, arm);
+      }
+      addEyes(2.62, 0.52, 0.14, 0.05);
+    }
+
+    this.monster.scale.setScalar(definition.scale);
+    this.monster.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.castShadow = !this.mobile;
+        object.receiveShadow = !this.mobile;
+      }
+    });
+  }
+
+  private disposeMonsterVisuals() {
+    for (const child of [...this.monster.children]) {
+      child.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.geometry.dispose();
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) material.dispose();
+      });
+      this.monster.remove(child);
+    }
   }
 
   private updateLocalCampers(player: THREE.Vector3, interactPressed: boolean, dt: number) {
@@ -357,10 +496,10 @@ export class ObjectiveSystem {
     const delta = flatPlayer.clone().sub(this.monster.position);
     const distance = delta.length();
     const found = this.campers.filter((camper) => camper.state !== "HIDDEN").length;
-    const speed = 1.55 + found * 0.12;
+    const speed = this.monsterDefinition.baseSpeed + found * this.monsterDefinition.speedPerCamper;
     if (distance > 0.001) this.monster.position.add(delta.normalize().multiplyScalar(Math.min(distance, speed * dt)));
     this.monster.lookAt(player.x, 0, player.z);
-    if (distance < 1.15) this.caught = true;
+    if (distance < this.monsterDefinition.catchDistance) this.caught = true;
   }
 
   private localDoorStates(): DoorState[] {
