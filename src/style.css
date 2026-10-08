@@ -53,7 +53,8 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: 0 24px 80px rgba(0,0,0,.38);
   backdrop-filter: blur(10px);
 }
-.eyebrow, .status, .field-label { font-family: "DM Mono", monospace; letter-spacing: .09em; }
+.eyebrow, .status, .field-label, .hud { font-family: "DM Mono", monospace; }
+.eyebrow, .field-label { letter-spacing: .09em; }
 .eyebrow { color: var(--mustard); font-size: clamp(11px, 2.5vw, 14px); }
 h1 { margin: 12px 0 14px; font-family: "Oswald", Impact, sans-serif; font-size: clamp(56px, 13vw, 100px); line-height: .83; letter-spacing: -.035em; }
 h2 { margin: 10px 0 18px; font-family: "Oswald", Impact, sans-serif; font-size: clamp(38px, 10vw, 62px); line-height: .95; }
@@ -101,17 +102,27 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
   position: absolute;
   top: calc(env(safe-area-inset-top) + 14px);
   left: calc(env(safe-area-inset-left) + 14px);
-  padding: 10px 12px;
+  padding: 11px 13px;
   border-radius: 10px;
-  background: rgba(19,33,27,.72);
+  background: rgba(19,33,27,.78);
   border: 1px solid rgba(244,236,216,.2);
-  font-family: "DM Mono", monospace;
   font-size: 11px;
 }
+.hud-kicker { color: var(--mustard); font-size: 9px; letter-spacing: .08em; }
+.hud-objective { margin-top: 6px; color: var(--cream); font-size: 13px; }
+.hud-threat { margin-top: 4px; color: #c1cec6; font-size: 9px; }
+.game-prompt { position: absolute; left: 50%; bottom: 25%; transform: translateX(-50%); padding: 8px 12px; border-radius: 8px; background: rgba(19,33,27,.72); font-size: 11px; white-space: nowrap; }
+.meters { position: absolute; left: calc(env(safe-area-inset-left) + 14px); bottom: calc(env(safe-area-inset-bottom) + 16px); width: min(250px, 54vw); display: grid; gap: 7px; font-size: 9px; }
+.meter { height: 7px; margin-top: 3px; overflow: hidden; border-radius: 99px; background: rgba(244,236,216,.13); }
+.meter i { display:block; width:100%; height:100%; border-radius:inherit; background:var(--mustard); }
 .crosshair { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; transform: translate(-50%,-50%); }
 .crosshair::before, .crosshair::after { content:""; position:absolute; background:#f4ecd8; opacity:.9; }
 .crosshair::before { width:10px; height:2px; top:4px; }
 .crosshair::after { width:2px; height:10px; left:4px; }
+.round-end { position:absolute; inset:0; display:grid; place-items:center; padding:24px; background:rgba(9,16,13,.72); backdrop-filter:blur(6px); text-align:center; }
+.round-end > div { max-width:560px; padding:28px; border:1px solid rgba(244,236,216,.24); border-radius:18px; background:rgba(27,46,38,.92); }
+.round-end h2 { margin:0 0 10px; }
+.round-end p { color:#d8cfb9; line-height:1.5; }
 
 .touch-ui { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
 .move-pad, .look-pad { position: absolute; bottom: max(18px, env(safe-area-inset-bottom)); width: 42vw; height: 42vh; max-height: 360px; pointer-events: auto; touch-action: none; }
@@ -119,6 +130,10 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
 .look-pad { right: 0; }
 .joystick { position: absolute; left: 28px; bottom: 28px; width: 112px; height: 112px; border-radius: 50%; border: 2px solid rgba(244,236,216,.3); background: rgba(244,236,216,.06); }
 .joystick-knob { position: absolute; width: 48px; height: 48px; left: 32px; top: 32px; border-radius: 50%; background: rgba(223,180,78,.72); transform: translate(0,0); }
+.touch-actions { position:absolute; right:max(16px, env(safe-area-inset-right)); bottom:max(18px, env(safe-area-inset-bottom)); display:grid; grid-template-columns:repeat(2, 66px); gap:9px; pointer-events:auto; }
+.touch-action { min-height:54px; padding:8px; border-radius:50%; background:rgba(27,46,38,.74); backdrop-filter:blur(4px); font-size:10px; touch-action:none; }
+.touch-use { grid-row:span 2; min-height:118px; border-radius:28px; background:rgba(223,180,78,.82); color:#1a2d25; border-color:transparent; }
+.touch-action.active { background:rgba(207,106,62,.88); }
 
 @media (pointer: fine) { .touch-ui { display: none; } }
 @media (max-width: 560px) {
@@ -126,4 +141,6 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
   .network-row { grid-template-columns: 1fr; }
   .join-row { grid-template-columns: 1fr; }
   h1 { font-size: clamp(54px, 17vw, 82px); }
+  .meters { bottom: calc(env(safe-area-inset-bottom) + 150px); width: 42vw; }
+  .game-prompt { bottom: 20%; max-width:80vw; white-space:normal; text-align:center; }
 }
