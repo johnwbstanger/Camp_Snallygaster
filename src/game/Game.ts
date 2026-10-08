@@ -1,16 +1,19 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
 import type { PlayerPose, PlayerState, SharedRoundState } from "../../shared/protocol";
+import { assetLibrary } from "./AssetLibrary";
 import { InputManager } from "./Input";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { PhysicalProps } from "./PhysicalProps";
 import { CampWorld } from "./World";
 
-const LC_MOVEMENT_SPEED = 4.6;
-const LC_SPRINT_MULTIPLIER_MIN = 1.0;
-const LC_SPRINT_MULTIPLIER_MAX = 2.25;
-const LC_SPRINT_INCREASE_RATE = 1.0;
-const LC_SPRINT_DECREASE_RATE = 10.0;
+// User-requested fun-speed profile: the old 10.35 max sprint is now normal movement,
+// and sprint is exactly 1.75x that value.
+const BASE_MOVEMENT_SPEED = 10.35;
+const SPRINT_MULTIPLIER = 1.75;
+const SPRINT_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * SPRINT_MULTIPLIER; // 18.1125
+const CROUCH_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * 0.5;
+const PLAYER_RADIUS = 0.38;
 
 export class Game {
   private renderer!: THREE.WebGLRenderer;
@@ -24,7 +27,6 @@ export class Game {
   private flashlight!: THREE.SpotLight;
   private flashlightTarget!: THREE.Object3D;
   private flashlightOn = false;
-  private sprintMultiplier = LC_SPRINT_MULTIPLIER_MIN;
   private frameId = 0;
   private running = false;
   private roundEnded = false;
@@ -55,14 +57,14 @@ export class Game {
     this.physics = new CANNON.World({ gravity: new CANNON.Vec3(0, -18, 0) });
     this.physics.allowSleep = true;
     this.physics.broadphase = new CANNON.SAPBroadphase(this.physics);
-    (this.physics.solver as CANNON.GSSolver).iterations = this.mobile ? 8 : 10;
-    this.physics.defaultContactMaterial.friction = 0.28;
+    (this.physics.solver as CANNON.GSSolver).iterations = this.mobile ? 10 : 14;
+    this.physics.defaultContactMaterial.friction = 0.32;
     this.physics.defaultContactMaterial.restitution = 0;
 
     this.world = new CampWorld(this.physics, this.mobile);
     this.objectives = new ObjectiveSystem(this.world.scene, this.mobile);
     this.props = new PhysicalProps(this.world.scene, this.physics, this.mobile);
-    this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 180);
+    this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 190);
     this.camera.rotation.order = "YXZ";
 
     this.renderer = new THREE.WebGLRenderer({
@@ -71,6 +73,8 @@ export class Game {
       alpha: false,
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = !this.mobile;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, this.mobile ? 1.25 : 1.75));
@@ -84,7 +88,7 @@ export class Game {
         <div id="objectiveText" class="hud-objective">CAMPERS SAFE 0 / 7</div>
         <div id="threatText" class="hud-threat">THE WOODS ARE QUIET</div>
       </div>
-      <div class="control-help">WASD MOVE · HOLD SHIFT SPRINT · CTRL CROUCH · SPACE JUMP · E INTERACT · LMB USE · G DROP · RMB SCAN</div>
+      <div class="control-help">WASD MOVE · HOLD SHIFT SPRINT · CTRL CROUCH · SPACE JUMP · E INTERACT · LMB USE · G DROP · RMB SCAN · ESC MENU</div>
       <div id="promptText" class="game-prompt"></div>
       <div class="crosshair"></div>
       <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p></div></div>
@@ -116,6 +120,7 @@ export class Game {
     if (!this.running) return;
     this.running = false;
     cancelAnimationFrame(this.frameId);
+    this.player?.velocity.setZero();
   }
 
   onPose(callback: (pose: PlayerPose) => void) { this.poseListener = callback; }
@@ -147,14 +152,19 @@ export class Game {
       if (player.id === localPlayerId) continue;
       seen.add(player.id);
       let avatar = this.remotePlayers.get(player.id);
-      const target = new THREE.Vector3(player.pose.x, player.pose.y - 0.15, player.pose.z);
+      const target = new THREE.Vector3(player.pose.x, player.pose.y - 0.82, player.pose.z);
       if (!avatar) {
         avatar = this.createRemoteAvatar(player.name);
         avatar.position.copy(target);
         this.remotePlayers.set(player.id, avatar);
         this.world.scene.add(avatar);
       } else {
-        avatar.position.lerp(target, 0.45);
+        const previous = avatar.position.clone();
+        avatar.position.lerp(target, 0.5);
+        const moved = previous.distanceToSquared(avatar.position) > 0.0008;
+        avatar.userData.walkPhase = (avatar.userData.walkPhase ?? 0) + (moved ? 0.34 : 0.08);
+        const visual = avatar.getObjectByName("counselor-visual");
+        if (visual) visual.position.y = moved ? Math.abs(Math.sin(avatar.userData.walkPhase)) * 0.025 : 0;
       }
       avatar.rotation.y = player.pose.yaw;
     }
@@ -181,21 +191,26 @@ export class Game {
     const playerMaterial = new CANNON.Material("player");
     this.player = new CANNON.Body({
       mass: 70,
-      shape: new CANNON.Sphere(0.5),
       material: playerMaterial,
-      // Horizontal speed is authored explicitly each frame. Damping here would
-      // make the verified Lethal Company target speeds read slower in Cannon.
       linearDamping: 0,
       angularDamping: 1,
       fixedRotation: true,
     });
+
+    // Three overlapping spheres form a vertical rounded capsule without the
+    // axis/orientation ambiguity of Cannon's cylinder primitive. It is far less
+    // likely to slip through wall seams than the old single rolling sphere.
+    const sphere = new CANNON.Sphere(PLAYER_RADIUS);
+    this.player.addShape(sphere, new CANNON.Vec3(0, -0.46, 0));
+    this.player.addShape(sphere, new CANNON.Vec3(0, 0, 0));
+    this.player.addShape(sphere, new CANNON.Vec3(0, 0.46, 0));
     this.player.position.set(this.respawnPose.x, this.respawnPose.y, this.respawnPose.z);
     this.player.allowSleep = false;
     this.physics.addBody(this.player);
   }
 
   private createFlashlight() {
-    this.flashlight = new THREE.SpotLight(0xfff0c7, this.mobile ? 12 : 18, 34, Math.PI / 7.5, 0.42, 1.3);
+    this.flashlight = new THREE.SpotLight(0xfff0c7, this.mobile ? 17 : 24, 38, Math.PI / 7.8, 0.4, 1.25);
     this.flashlight.visible = false;
     this.flashlight.castShadow = !this.mobile;
     this.flashlightTarget = new THREE.Object3D();
@@ -205,19 +220,31 @@ export class Game {
 
   private createRemoteAvatar(name: string) {
     const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.42, 1, 4, 8),
-      new THREE.MeshStandardMaterial({ color: 0xd96f47, roughness: 0.82 }),
-    );
-    body.position.y = 0.9;
-    const hat = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.48, 0.48, 0.12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xe4bc55, roughness: 0.9 }),
-    );
-    hat.position.y = 1.78;
     group.name = name;
-    group.add(body, hat);
-    group.scale.setScalar(0.5);
+    const visual = new THREE.Group();
+    visual.name = "counselor-visual";
+    group.add(visual);
+
+    const fallback = new THREE.Group();
+    fallback.name = "counselor-fallback";
+    const shirt = new THREE.MeshStandardMaterial({ color: 0xc4633f, roughness: 0.72 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0xc8956f, roughness: 0.88 });
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.31, 0.82, 5, 12), shirt);
+    body.position.y = 0.9;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 16, 12), skin);
+    head.position.y = 1.66;
+    const legGeometry = new THREE.CapsuleGeometry(0.085, 0.52, 4, 8);
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(legGeometry, new THREE.MeshStandardMaterial({ color: 0x293b45, roughness: 0.86 }));
+      leg.position.set(side * 0.13, 0.28, 0);
+      fallback.add(leg);
+    }
+    fallback.add(body, head);
+    visual.add(fallback);
+
+    void assetLibrary.attach("counselor", visual, { name: "counselor-model" }).then((model) => {
+      if (model) fallback.visible = false;
+    });
     return group;
   }
 
@@ -241,23 +268,13 @@ export class Game {
 
     const moving = inputMagnitude > 0.08;
     const sprinting = input.sprint && moving && !input.crouch;
-    if (sprinting) {
-      this.sprintMultiplier = Math.min(
-        LC_SPRINT_MULTIPLIER_MAX,
-        this.sprintMultiplier + LC_SPRINT_INCREASE_RATE * dt,
-      );
-    } else {
-      this.sprintMultiplier = Math.max(
-        LC_SPRINT_MULTIPLIER_MIN,
-        this.sprintMultiplier - LC_SPRINT_DECREASE_RATE * dt,
-      );
-    }
-
-    const speed = LC_MOVEMENT_SPEED * this.sprintMultiplier;
+    const speed = input.crouch
+      ? CROUCH_MOVEMENT_SPEED
+      : sprinting
+        ? SPRINT_MOVEMENT_SPEED
+        : BASE_MOVEMENT_SPEED;
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
-    // THREE cameras face -Z at yaw 0. These basis equations therefore make
-    // +forward (W) camera-forward for every yaw, with no input-side inversion.
     const vx = (rightInput * cos - forwardInput * sin) * speed;
     const vz = (-rightInput * sin - forwardInput * cos) * speed;
     this.player.velocity.x = vx;
@@ -266,20 +283,22 @@ export class Game {
     if (input.flashlightPressed) this.flashlightOn = !this.flashlightOn;
 
     const p = this.player.position;
-    const eyeHeight = input.crouch ? 1.0 : 1.62;
-    this.camera.position.set(p.x, p.y + eyeHeight, p.z);
+    const eyeOffset = input.crouch ? 0.46 : 0.84;
+    this.camera.position.set(p.x, p.y + eyeOffset, p.z);
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
     this.props.update(this.camera, dt);
-    this.physics.step(1 / 60, dt, 3);
+
+    // At 18.1125 m/s a 60 Hz single step can cross a thin wall in one frame.
+    // A 120 Hz fixed step plus substeps keeps collision resolution ahead of the player.
+    this.physics.step(1 / 120, dt, this.mobile ? 5 : 8);
 
     if (p.y < -10) {
       this.player.position.set(this.respawnPose.x, this.respawnPose.y, this.respawnPose.z);
       this.player.velocity.setZero();
-      this.sprintMultiplier = LC_SPRINT_MULTIPLIER_MIN;
     }
 
-    this.camera.position.set(p.x, p.y + eyeHeight, p.z);
+    this.camera.position.set(p.x, p.y + eyeOffset, p.z);
     this.updateFlashlight();
     this.updateInteraction();
 
@@ -300,7 +319,7 @@ export class Game {
 
     const playerPosition = new THREE.Vector3(p.x, p.y, p.z);
     const objective = this.networked
-      ? this.objectives.updateShared(playerPosition, this.sharedRound)
+      ? this.objectives.updateShared(playerPosition, this.sharedRound, dt)
       : this.objectives.updateLocal(playerPosition, input.interactPressed && !usedWorldInteraction, dt);
     const prompt = this.interactionPrompt || objective.prompt;
     this.updateHud(objective.safe, objective.total, prompt, objective.monsterAwake);
@@ -310,7 +329,7 @@ export class Game {
       this.showRoundEnd(objective.complete);
     }
 
-    if (this.poseListener && now - this.lastPoseEmit >= 80) {
+    if (this.poseListener && now - this.lastPoseEmit >= 70) {
       this.lastPoseEmit = now;
       this.poseListener({ x: p.x, y: p.y, z: p.z, yaw: this.yaw });
     }
@@ -328,7 +347,7 @@ export class Game {
     this.interactionRay.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     const hit = this.interactionRay
       .intersectObjects(candidates, true)
-      .find((candidate) => candidate.distance <= 3.25 && candidate.object.userData.targetId);
+      .find((candidate) => candidate.distance <= 3.3 && candidate.object.userData.targetId);
 
     if (!hit) return;
     this.interactionTargetId = String(hit.object.userData.targetId);
@@ -361,7 +380,7 @@ export class Game {
     const text = this.mount.querySelector<HTMLElement>("#roundEndText");
     if (!overlay || !title || !text) return;
     title.textContent = won ? "EVACUATION COMPLETE" : "THE WOODS FOUND YOU";
-    text.textContent = won ? "Seven campers accounted for. The bus can leave." : "Stay together. Search faster. Try again from the menu.";
+    text.textContent = won ? "Seven campers accounted for. The bus doors are closed. Time to leave." : "Stay together. Search faster. Try again from the menu.";
     overlay.classList.remove("hidden");
   }
 
