@@ -2,6 +2,8 @@ import * as THREE from "three";
 import * as CANNON from "cannon-es";
 import type { PlayerPose, PlayerState, SharedRoundState } from "../../shared/protocol";
 import { assetLibrary } from "./AssetLibrary";
+import { installCampCollisionGuard } from "./CollisionMap";
+import { addHighFidelitySetDressing } from "./HighFidelitySetDressing";
 import { InputManager } from "./Input";
 import { ObjectiveSystem } from "./ObjectiveSystem";
 import { PhysicalProps } from "./PhysicalProps";
@@ -62,6 +64,9 @@ export class Game {
     this.physics.defaultContactMaterial.restitution = 0;
 
     this.world = new CampWorld(this.physics, this.mobile);
+    // This layer existed previously but was never attached to the scene. Keep it
+    // separate from gameplay collision so visual upgrades cannot change physics.
+    addHighFidelitySetDressing(this.world.scene, this.mobile);
     this.objectives = new ObjectiveSystem(this.world.scene, this.mobile);
     this.props = new PhysicalProps(this.world.scene, this.physics, this.mobile);
     this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 190);
@@ -97,6 +102,7 @@ export class Game {
 
     this.input = new InputManager(this.renderer.domElement);
     this.createPlayer();
+    installCampCollisionGuard(this.physics, PLAYER_RADIUS);
     this.createFlashlight();
     this.resize();
 
@@ -197,9 +203,6 @@ export class Game {
       fixedRotation: true,
     });
 
-    // Three overlapping spheres form a vertical rounded capsule without the
-    // axis/orientation ambiguity of Cannon's cylinder primitive. It is far less
-    // likely to slip through wall seams than the old single rolling sphere.
     const sphere = new CANNON.Sphere(PLAYER_RADIUS);
     this.player.addShape(sphere, new CANNON.Vec3(0, -0.46, 0));
     this.player.addShape(sphere, new CANNON.Vec3(0, 0, 0));
@@ -289,8 +292,6 @@ export class Game {
     this.camera.rotation.x = this.pitch;
     this.props.update(this.camera, dt);
 
-    // At 18.1125 m/s a 60 Hz single step can cross a thin wall in one frame.
-    // A 120 Hz fixed step plus substeps keeps collision resolution ahead of the player.
     this.physics.step(1 / 120, dt, this.mobile ? 5 : 8);
 
     if (p.y < -10) {
