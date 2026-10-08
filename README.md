@@ -1,99 +1,108 @@
 # Camp Snallygaster
 
-**First-Person Cooperative Horror Extraction Game**
+Browser-first cooperative horror game set at a 1993 summer camp.
 
-Set at a summer camp in 1993, Camp Snallygaster is an online multiplayer hide-and-seek horror game where 2–15 players take the role of camp counselors searching for hidden campers during an emergency evacuation.
+## Stable rebuild baseline
 
-## Core Gameplay
+`main` was rebuilt from the smallest reliable browser runtime and verified layer-by-layer before promotion. The pre-rebuild project is preserved at `archive/pre-clean-rebuild-2026-10-08`.
 
-- **Search** the camp for 7 hidden campers
-- **Listen** for subtle sounds that reveal hiding spots
-- **Rescue** campers by getting them to follow or carrying them
-- **Evade** the Snallygaster hunting through the camp
-- **Extract** all campers back to the evacuation bus
+The current MVP deliberately prioritizes loading, controls, physics, cross-play, and shared gameplay state before asset-heavy polish.
 
-## Features
+### Verified core
 
-- ✅ Multiplayer up to 15 players (browsers/iPad/PC/Mac)
-- ✅ First-person perspective with full 3D physics
-- ✅ 40+ randomized camper hiding spots
-- ✅ Dynamic monster AI with perception system
-- ✅ Rare handgun discovery mechanic
-- ✅ Cooperative follow/carry system
-- ✅ Dusk-to-dark environmental escalation
-- ✅ Radio communication and pings
-- ✅ Flashlight with battery management
-- ✅ Player downed/revive mechanics
-- ✅ 1993 retro aesthetic (sunflower yellows, neon oranges, REI Co-op vibe)
+- Responsive menu loads before the heavy 3D runtime
+- Desktop keyboard/mouse controls
+- iPhone/iPad touch movement, look, interact, run, and flashlight controls
+- Three.js WebGL renderer with reduced mobile DPR, antialiasing, and shadows
+- Cannon-es local player/environment physics
+- Camp environment with cabins, dining hall, bath house, arts cabin, director cabin, road, bus, and tree perimeter
+- Solo rescue loop with seven campers, extraction bus, flashlight, stamina, monster chase, win/loss states
+- WebSocket multiplayer room creation and join codes
+- Host lobby and synchronized roster
+- Cross-device player transform synchronization
+- Server-authoritative camper rescue state
+- Server-authoritative monster position/threat state
+- Shared win/loss round state
+- Production Node server serves both the compiled browser client and `/ws` from one origin
+- Production HTML is not cached across deployments; hashed assets are immutable
 
-## Tech Stack
+## Architecture
 
-- **Client:** TypeScript, Three.js, Vite
-- **Server:** Node.js, Express, WebSockets
-- **Physics:** Cannon-es
-- **Multiplayer:** Server-authoritative architecture
-
-## Project Structure
-
+```text
+Browser (desktop / iPhone / iPad)
+        |
+        | HTTPS + WSS, same origin
+        v
+Node / Express / ws
+        |
+        +-- compiled Vite client
+        +-- /ws multiplayer rooms
+        +-- /healthz
+        +-- /api/status
 ```
-Camp_Snallygaster/
-├── server/              # Server-side game logic
-│   ├── index.ts
-│   ├── GameServer.ts
-│   ├── Campers.ts
-│   ├── Monster.ts
-│   ├── Items.ts
-│   └── Weapons.ts
-├── src/                 # Client-side code
-│   ├── main.ts
-│   ├── style.css
-│   ├── game/
-│   │   ├── Game.ts
-│   │   ├── Input.ts
-│   │   ├── World.ts
-│   │   ├── Player.ts
-│   │   └── Camera.ts
-│   ├── rendering/
-│   │   ├── Renderer.ts
-│   │   └── Materials.ts
-│   ├── networking/
-│   │   ├── Client.ts
-│   │   └── Messages.ts
-│   ├── ui/
-│   │   ├── HUD.ts
-│   │   ├── Lobby.ts
-│   │   └── ResultsScreen.ts
-│   └── audio/
-│       └── AudioManager.ts
-└── shared/              # Shared types and protocols
-    └── protocol.ts
-```
+
+The menu shell is intentionally small. Three.js and Cannon are dynamically imported only when a player enters a round so mobile browsers can display the menu without first parsing the full 3D engine bundle.
+
+## Technology
+
+- TypeScript
+- Vite
+- Three.js
+- cannon-es
+- Node.js
+- Express
+- `ws` WebSockets
+
+The rebuild intentionally does not depend on Colyseus or a custom REST matchmaking hop. Room creation, joining, start, movement, interaction, and shared round state use one small WebSocket protocol in `shared/protocol.ts`.
 
 ## Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Run dev server
 npm run dev
-
-# Build for production
-npm run build
 ```
 
-The game will be available at `http://localhost:5173` with WebSocket connection to the game server at `localhost:3000`.
+Development client: `http://localhost:5173`
 
-## 1993 Aesthetic
+Development WebSocket server: `ws://localhost:3001/ws`
 
-Visual language drawn from authentic 1993 outdoor/camp design:
-- Faded yellows and oranges
-- Forest greens and teals
-- Fleece patterns and geometric designs
-- Hand-painted wooden signs
-- Analog equipment (walkie-talkies, corded phones)
-- No futuristic UI elements
+## Production
 
-## License
+```bash
+npm install
+npm run build
+NODE_ENV=production npm start
+```
 
-Private project.
+The production Node process serves `dist/client` and the WebSocket endpoint on the same port. Deployment should therefore use the Node service URL as the game URL rather than GitHub Pages.
+
+A `render.yaml` blueprint is included for a single-service deployment.
+
+## Verification
+
+Every change to `main` runs `.github/workflows/rebuild-verify.yml`.
+
+The workflow must pass:
+
+1. TypeScript typecheck
+2. Production Vite build
+3. Compiled entry-file check
+4. Two-client multiplayer smoke test
+   - create camp
+   - join camp
+   - roster synchronization
+   - start round
+   - movement synchronization
+   - camper rescue synchronization
+   - monster/threat synchronization
+5. Production server smoke test
+   - `/healthz`
+   - production `index.html`
+   - compiled JS/CSS assets
+   - `/ws` connection
+
+This is specifically designed to prevent the earlier failure mode where GitHub reported a successful deploy while browsers received raw `/src/main.ts` or a client with no functioning multiplayer backend.
+
+## Current design direction
+
+The visual target remains late-80s/early-90s outdoor-catalog nostalgia: forest greens, mustard yellow, faded orange, cream paper, analog camp signage, and a polished summer-camp atmosphere. Visual assets should be layered onto this stable baseline without changing the verified networking and startup architecture.
