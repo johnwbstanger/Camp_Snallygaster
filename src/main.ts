@@ -75,16 +75,20 @@ async function launchGame(networked: boolean) {
     const { Game } = await import("./game/Game");
     game = new Game(viewport, networked);
     await game.start();
-    menu.classList.add("hidden");
-    lobby.classList.add("hidden");
-    viewport.classList.remove("hidden");
-    exitButton.classList.remove("hidden");
 
-    if (networked && multiplayer) {
+    if (networked && room && multiplayer) {
+      const localPlayer = room.players.find((player) => player.id === room?.playerId);
+      if (localPlayer) game.setLocalPose(localPlayer.pose);
+      game.setRemotePlayers(room.players, room.playerId);
       game.onPose((pose) => multiplayer?.sendPose(pose));
       game.onInteract(() => multiplayer?.interact());
       if (latestRound) game.setSharedRoundState(latestRound);
     }
+
+    menu.classList.add("hidden");
+    lobby.classList.add("hidden");
+    viewport.classList.remove("hidden");
+    exitButton.classList.remove("hidden");
     game.resume();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -106,6 +110,7 @@ function ensureMultiplayer() {
   multiplayer.onRoster((nextRoom) => {
     room = nextRoom;
     renderLobby(nextRoom);
+    game?.setRemotePlayers(nextRoom.players, nextRoom.playerId);
   });
   multiplayer.onSnapshot((players) => game?.setRemotePlayers(players, room?.playerId ?? null));
   multiplayer.onRound((state) => {

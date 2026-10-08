@@ -4,6 +4,7 @@ export type InputSnapshot = {
   lookX: number;
   lookY: number;
   sprint: boolean;
+  crouch: boolean;
   interactPressed: boolean;
   flashlightPressed: boolean;
 };
@@ -21,6 +22,7 @@ export class InputManager {
   private interactPressed = false;
   private flashlightPressed = false;
   private touchSprint = false;
+  private touchCrouch = false;
   private cleanup: Array<() => void> = [];
   readonly ui: HTMLDivElement;
 
@@ -34,12 +36,14 @@ export class InputManager {
         <button class="touch-action touch-use" data-use type="button">USE</button>
         <button class="touch-action" data-run type="button">RUN</button>
         <button class="touch-action" data-light type="button">LIGHT</button>
+        <button class="touch-action" data-crouch type="button">CROUCH</button>
       </div>
     `;
     canvas.parentElement?.appendChild(this.ui);
     this.bindKeyboard();
     this.bindMouse();
     this.bindTouch();
+    this.bindLifecycleReset();
   }
 
   sample(): InputSnapshot {
@@ -47,12 +51,14 @@ export class InputManager {
     const keyboardRight = (this.keys.has("KeyD") || this.keys.has("ArrowRight") ? 1 : 0) - (this.keys.has("KeyA") || this.keys.has("ArrowLeft") ? 1 : 0);
     const forward = Math.max(-1, Math.min(1, keyboardForward - this.moveY));
     const right = Math.max(-1, Math.min(1, keyboardRight + this.moveX));
+    const crouch = this.touchCrouch || this.keys.has("ControlLeft") || this.keys.has("ControlRight") || this.keys.has("KeyC");
     const snapshot = {
       forward,
       right,
       lookX: this.lookX,
       lookY: this.lookY,
-      sprint: this.touchSprint || this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
+      sprint: !crouch && (this.touchSprint || this.keys.has("ShiftLeft") || this.keys.has("ShiftRight")),
+      crouch,
       interactPressed: this.interactPressed,
       flashlightPressed: this.flashlightPressed,
     };
@@ -66,6 +72,7 @@ export class InputManager {
   destroy() {
     this.cleanup.forEach((fn) => fn());
     this.cleanup = [];
+    this.resetContinuousState();
     this.ui.remove();
   }
 
@@ -104,6 +111,7 @@ export class InputManager {
     const useButton = this.ui.querySelector<HTMLButtonElement>("[data-use]")!;
     const runButton = this.ui.querySelector<HTMLButtonElement>("[data-run]")!;
     const lightButton = this.ui.querySelector<HTMLButtonElement>("[data-light]")!;
+    const crouchButton = this.ui.querySelector<HTMLButtonElement>("[data-crouch]")!;
 
     const moveStart = (event: PointerEvent) => {
       if (event.pointerType === "mouse" || this.movePointer !== null) return;
@@ -145,6 +153,12 @@ export class InputManager {
     const light = (event: PointerEvent) => { event.preventDefault(); this.flashlightPressed = true; };
     const runStart = (event: PointerEvent) => { event.preventDefault(); this.touchSprint = true; runButton.classList.add("active"); };
     const runEnd = (event: PointerEvent) => { event.preventDefault(); this.touchSprint = false; runButton.classList.remove("active"); };
+    const toggleCrouch = (event: PointerEvent) => {
+      event.preventDefault();
+      this.touchCrouch = !this.touchCrouch;
+      crouchButton.classList.toggle("active", this.touchCrouch);
+      if (this.touchCrouch) runEnd(event);
+    };
 
     movePad.addEventListener("pointerdown", moveStart);
     movePad.addEventListener("pointermove", moveMove);
@@ -160,6 +174,7 @@ export class InputManager {
     runButton.addEventListener("pointerup", runEnd);
     runButton.addEventListener("pointercancel", runEnd);
     runButton.addEventListener("pointerleave", runEnd);
+    crouchButton.addEventListener("pointerdown", toggleCrouch);
 
     this.cleanup.push(
       () => movePad.removeEventListener("pointerdown", moveStart),
@@ -176,7 +191,36 @@ export class InputManager {
       () => runButton.removeEventListener("pointerup", runEnd),
       () => runButton.removeEventListener("pointercancel", runEnd),
       () => runButton.removeEventListener("pointerleave", runEnd),
+      () => crouchButton.removeEventListener("pointerdown", toggleCrouch),
     );
+  }
+
+  private bindLifecycleReset() {
+    const reset = () => this.resetContinuousState();
+    const visibility = () => { if (document.visibilityState !== "visible") reset(); };
+    window.addEventListener("blur", reset);
+    window.addEventListener("pagehide", reset);
+    document.addEventListener("visibilitychange", visibility);
+    this.cleanup.push(
+      () => window.removeEventListener("blur", reset),
+      () => window.removeEventListener("pagehide", reset),
+      () => document.removeEventListener("visibilitychange", visibility),
+    );
+  }
+
+  private resetContinuousState() {
+    this.keys.clear();
+    this.moveX = 0;
+    this.moveY = 0;
+    this.movePointer = null;
+    this.lookPointer = null;
+    this.touchSprint = false;
+    this.touchCrouch = false;
+    this.lookX = 0;
+    this.lookY = 0;
+    const knob = this.ui?.querySelector<HTMLElement>(".joystick-knob");
+    if (knob) knob.style.transform = "translate(0px, 0px)";
+    this.ui?.querySelectorAll(".touch-action.active").forEach((element) => element.classList.remove("active"));
   }
 
   private updateMove(event: PointerEvent, pad: HTMLElement, knob: HTMLElement) {
