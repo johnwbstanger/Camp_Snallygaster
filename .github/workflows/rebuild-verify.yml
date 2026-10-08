@@ -17,6 +17,8 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - name: Verify Lethal Company movement and keybind contract
+        run: node scripts/movement-contract.mjs
       - run: npm run build
       - name: Verify production entry exists
         run: test -f dist/client/index.html && grep -q "assets/" dist/client/index.html
