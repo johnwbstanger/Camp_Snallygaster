@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
 import { ExternalModelLibrary, type CampModelKey } from "./ExternalModelLibrary";
+import { StaticSceneryUpgrade } from "./StaticSceneryUpgrade";
 
 type PropKind = "cooler" | "box" | "basketball" | "barrel";
 
@@ -20,6 +21,7 @@ export class PhysicalProps {
 
   constructor(private scene: THREE.Scene, private physics: CANNON.World, private mobile: boolean) {
     this.models = new ExternalModelLibrary(mobile);
+    new StaticSceneryUpgrade(scene, mobile);
     this.addCooler("prop:cooler-red", "RED COOLER", -12, 0.65, 18.5, 0xb83e32);
     this.addCooler("prop:cooler-teal", "TEAL COOLER", 6.5, 0.65, -19.5, 0x35746d);
     this.addBox("prop:box-1", "CARDBOARD BOX", -34, 0.7, -34, 0.95);
