@@ -150,7 +150,7 @@ export class CampWorld {
     const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x6f9692, roughness: 0.3, metalness: 0.08 });
     const windowCount = lodge ? 4 : 2;
     for (let i = 0; i < windowCount; i += 1) {
-      const t = windowCount === 1 ? 0 : i / (windowCount - 1);
+      const t = i / (windowCount - 1);
       const wx = THREE.MathUtils.lerp(-width * 0.34, width * 0.34, t);
       if (Math.abs(wx) < 1.1) continue;
       const frame = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.15, 0.18), this.cream);
