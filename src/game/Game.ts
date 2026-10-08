@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
+import type { PlayerPose, PlayerState } from "../../shared/protocol";
 import { InputManager } from "./Input";
 import { CampWorld } from "./World";
 
@@ -15,6 +16,9 @@ export class Game {
   private lastTime = 0;
   private yaw = Math.PI;
   private pitch = -0.08;
+  private lastPoseEmit = 0;
+  private poseListener: ((pose: PlayerPose) => void) | null = null;
+  private remotePlayers = new Map<string, THREE.Group>();
   private readonly mobile = matchMedia("(pointer: coarse)").matches || /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
   private readonly resizeHandler = () => this.resize();
 
@@ -55,9 +59,7 @@ export class Game {
       event.preventDefault();
       this.running = false;
     });
-    this.renderer.domElement.addEventListener("webglcontextrestored", () => {
-      this.resume();
-    });
+    this.renderer.domElement.addEventListener("webglcontextrestored", () => this.resume());
   }
 
   resume() {
@@ -67,20 +69,45 @@ export class Game {
     this.frameId = requestAnimationFrame((time) => this.loop(time));
   }
 
+  onPose(callback: (pose: PlayerPose) => void) {
+    this.poseListener = callback;
+  }
+
+  setRemotePlayers(players: PlayerState[], localPlayerId: string | null) {
+    const seen = new Set<string>();
+    for (const player of players) {
+      if (player.id === localPlayerId) continue;
+      seen.add(player.id);
+      let avatar = this.remotePlayers.get(player.id);
+      if (!avatar) {
+        avatar = this.createRemoteAvatar(player.name);
+        this.remotePlayers.set(player.id, avatar);
+        this.world.scene.add(avatar);
+      }
+      avatar.position.lerp(new THREE.Vector3(player.pose.x, player.pose.y - 0.15, player.pose.z), 0.45);
+      avatar.rotation.y = player.pose.yaw;
+    }
+
+    for (const [id, avatar] of this.remotePlayers) {
+      if (seen.has(id)) continue;
+      avatar.removeFromParent();
+      this.remotePlayers.delete(id);
+    }
+  }
+
   destroy() {
     this.running = false;
     cancelAnimationFrame(this.frameId);
     window.removeEventListener("resize", this.resizeHandler);
     this.input?.destroy();
     this.renderer?.dispose();
+    this.remotePlayers.clear();
     document.exitPointerLock?.();
   }
 
   private createPlayer() {
-    const material = new CANNON.Material("player");
     this.player = new CANNON.Body({
       mass: 70,
-      material,
       shape: new CANNON.Sphere(0.48),
       linearDamping: 0.86,
       fixedRotation: true,
@@ -88,6 +115,23 @@ export class Game {
     this.player.position.set(0, 1.4, 27);
     this.player.allowSleep = false;
     this.physics.addBody(this.player);
+  }
+
+  private createRemoteAvatar(name: string) {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.42, 1.0, 4, 8),
+      new THREE.MeshStandardMaterial({ color: 0xd96f47, roughness: 0.82 }),
+    );
+    body.position.y = 0.9;
+    const hat = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.48, 0.48, 0.12, 12),
+      new THREE.MeshStandardMaterial({ color: 0xe4bc55, roughness: 0.9 }),
+    );
+    hat.position.y = 1.78;
+    group.name = name;
+    group.add(body, hat);
+    return group;
   }
 
   private loop(now: number) {
@@ -120,6 +164,11 @@ export class Game {
     this.camera.position.set(p.x, p.y + 1.05, p.z);
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
+
+    if (this.poseListener && now - this.lastPoseEmit >= 80) {
+      this.lastPoseEmit = now;
+      this.poseListener({ x: p.x, y: p.y, z: p.z, yaw: this.yaw });
+    }
 
     this.renderer.render(this.world.scene, this.camera);
     this.frameId = requestAnimationFrame((time) => this.loop(time));
