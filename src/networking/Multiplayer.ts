@@ -8,6 +8,8 @@ export type RoomInfo = {
   players: PlayerState[];
 };
 
+const DEFAULT_PRODUCTION_SERVER = "https://camp-snallygaster-rebuild.onrender.com";
+
 export class MultiplayerClient {
   private socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
@@ -31,6 +33,10 @@ export class MultiplayerClient {
     if (this.connected) return;
     if (this.connectPromise) return this.connectPromise;
 
+    if (this.socket && this.socket.readyState !== WebSocket.CLOSED) {
+      try { this.socket.close(); } catch {}
+    }
+
     this.connectPromise = new Promise<void>((resolve, reject) => {
       const endpoint = this.endpoint();
       const socket = new WebSocket(endpoint);
@@ -45,8 +51,8 @@ export class MultiplayerClient {
       };
 
       const timeout = window.setTimeout(() => {
-        finishError("Multiplayer server is taking too long to wake up. Try again in a few seconds.");
-      }, 20000);
+        finishError("Multiplayer server is still waking up. Try Create Camp again in a few seconds.");
+      }, 45000);
 
       socket.addEventListener("open", () => {
         if (settled) return;
@@ -105,7 +111,7 @@ export class MultiplayerClient {
       const timer = window.setTimeout(() => {
         this.pendingWelcome = null;
         reject(new Error("Camp request timed out"));
-      }, 12000);
+      }, 20000);
       this.pendingWelcome = { resolve, reject, timer };
       this.send(message);
     });
@@ -193,8 +199,11 @@ export class MultiplayerClient {
 
   private endpoint() {
     const configured = String(import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
-    if (configured) {
-      const base = configured.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+    const isGitHubPages = location.hostname.endsWith("github.io");
+    const productionBase = configured || (isGitHubPages ? DEFAULT_PRODUCTION_SERVER : "");
+
+    if (productionBase) {
+      const base = productionBase.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
       return `${base}/ws`;
     }
     if (import.meta.env.DEV) {

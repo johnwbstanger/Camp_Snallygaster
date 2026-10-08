@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SharedRoundState } from "../../shared/protocol";
+import { addCampDetailKit } from "./CampDetailKit";
 
 export type ObjectiveStatus = {
   found: number;
@@ -37,6 +38,7 @@ export class ObjectiveSystem {
   private complete = false;
 
   constructor(private scene: THREE.Scene, private mobile: boolean) {
+    addCampDetailKit(this.scene, this.mobile);
     this.createCampers();
     this.createMonster();
   }
@@ -99,25 +101,80 @@ export class ObjectiveSystem {
 
   private createCampers() {
     CAMPERS.forEach(([name, x, y, z], index) => {
-      const group = new THREE.Group();
-      const shirt = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.28, 0.62, 3, 7),
-        new THREE.MeshStandardMaterial({ color: [0xd7a844, 0xd46f4b, 0x5f8f7b, 0xc7789c][index % 4], roughness: 0.9 }),
-      );
-      shirt.position.y = 0.63;
-      const head = new THREE.Mesh(
-        new THREE.SphereGeometry(0.22, 8, 6),
-        new THREE.MeshStandardMaterial({ color: 0xc99368, roughness: 0.95 }),
-      );
-      head.position.y = 1.28;
-      group.add(shirt, head);
+      const group = this.createCamperModel(index);
       group.position.set(x, y, z);
-      group.scale.setScalar(this.mobile ? 0.95 : 1);
+      group.scale.setScalar(this.mobile ? 0.92 : 1);
       this.scene.add(group);
       const camper: Camper = { id: `camper-${index + 1}`, name, mesh: group, state: "HIDDEN" };
       this.campers.push(camper);
       this.camperById.set(camper.id, camper);
     });
+  }
+
+  private createCamperModel(index: number) {
+    const group = new THREE.Group();
+    const shirtColors = [0xd7a844, 0xd46f4b, 0x5f8f7b, 0xc7789c, 0x5476a3, 0xc9853c, 0x6f8b55];
+    const shortsColors = [0x334554, 0x56483d, 0x2e4d44, 0x45424b];
+    const skinColors = [0xc99368, 0xd6a27a, 0xb97b57, 0xe0b28a];
+    const hairColors = [0x3b2a21, 0x6a442d, 0x241d1a, 0x9b6b3f];
+    const shirtMaterial = new THREE.MeshStandardMaterial({ color: shirtColors[index % shirtColors.length], roughness: 0.92 });
+    const shortsMaterial = new THREE.MeshStandardMaterial({ color: shortsColors[index % shortsColors.length], roughness: 0.95 });
+    const skinMaterial = new THREE.MeshStandardMaterial({ color: skinColors[index % skinColors.length], roughness: 0.95 });
+    const hairMaterial = new THREE.MeshStandardMaterial({ color: hairColors[index % hairColors.length], roughness: 1 });
+    const shoeMaterial = new THREE.MeshStandardMaterial({ color: index % 2 === 0 ? 0xd8d0bb : 0x33383a, roughness: 0.9 });
+    const packMaterial = new THREE.MeshStandardMaterial({ color: [0x8b4e3d, 0x3f6c5d, 0xc18b38][index % 3], roughness: 0.96 });
+
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 0.5, 4, this.mobile ? 7 : 10), shirtMaterial);
+    torso.position.y = 0.83;
+    torso.scale.set(1, 1.05, 0.86);
+
+    const shorts = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.33, 0.34), shortsMaterial);
+    shorts.position.y = 0.5;
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, this.mobile ? 8 : 12, this.mobile ? 6 : 10), skinMaterial);
+    head.position.y = 1.48;
+    head.scale.set(0.95, 1.05, 0.92);
+
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.235, this.mobile ? 7 : 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.58), hairMaterial);
+    hair.position.y = 1.55;
+
+    const armGeometry = new THREE.CapsuleGeometry(0.075, 0.34, 3, this.mobile ? 6 : 8);
+    for (const side of [-1, 1]) {
+      const arm = new THREE.Mesh(armGeometry, skinMaterial);
+      arm.position.set(side * 0.34, 0.86, 0);
+      arm.rotation.z = side * -0.14;
+      group.add(arm);
+
+      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.36, 3, this.mobile ? 6 : 8), skinMaterial);
+      leg.position.set(side * 0.14, 0.22, 0);
+      group.add(leg);
+
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.12, 0.35), shoeMaterial);
+      shoe.position.set(side * 0.14, -0.05, 0.08);
+      group.add(shoe);
+    }
+
+    const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.58, 0.24), packMaterial);
+    backpack.position.set(0, 0.88, -0.26);
+    backpack.rotation.x = -0.08;
+
+    const bedroll = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.48, this.mobile ? 7 : 10), new THREE.MeshStandardMaterial({ color: 0xd4c19c, roughness: 1 }));
+    bedroll.rotation.z = Math.PI / 2;
+    bedroll.position.set(0, 1.12, -0.37);
+
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.25, 0.1, this.mobile ? 8 : 12), shirtMaterial);
+    cap.position.y = 1.7;
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.035, 0.22), shirtMaterial);
+    brim.position.set(0, 1.68, 0.18);
+
+    group.add(torso, shorts, head, hair, backpack, bedroll, cap, brim);
+    group.traverse((object) => {
+      if (object instanceof THREE.Mesh) {
+        object.castShadow = !this.mobile;
+        object.receiveShadow = !this.mobile;
+      }
+    });
+    return group;
   }
 
   private createMonster() {
@@ -187,7 +244,7 @@ export class ObjectiveSystem {
 
   private interactionPrompt(player: THREE.Vector3) {
     const nearest = this.nearestHidden(player);
-    return nearest && nearest.distance < 2.6 ? `E / USE · CALL TO ${nearest.camper.name.toUpperCase()}` : "";
+    return nearest && nearest.distance < 2.6 ? `E / CLICK / USE · CALL TO ${nearest.camper.name.toUpperCase()}` : "";
   }
 
   private nearestHidden(player: THREE.Vector3) {
