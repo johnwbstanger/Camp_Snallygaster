@@ -16,8 +16,6 @@ export class Game {
   private flashlight!: THREE.SpotLight;
   private flashlightTarget!: THREE.Object3D;
   private flashlightOn = false;
-  private battery = 1;
-  private stamina = 1;
   private frameId = 0;
   private running = false;
   private roundEnded = false;
@@ -76,12 +74,8 @@ export class Game {
         <div id="objectiveText" class="hud-objective">CAMPERS SAFE 0 / 7</div>
         <div id="threatText" class="hud-threat">THE WOODS ARE QUIET</div>
       </div>
-      <div class="control-help">WASD MOVE · SHIFT RUN · C/CTRL CROUCH · E USE · F LIGHT</div>
+      <div class="control-help">WASD MOVE · SHIFT RUN · C/CTRL CROUCH · E / CLICK USE · F LIGHT</div>
       <div id="promptText" class="game-prompt"></div>
-      <div class="meters">
-        <div><span>STAMINA</span><div class="meter"><i id="staminaFill"></i></div></div>
-        <div><span>FLASHLIGHT</span><div class="meter"><i id="batteryFill"></i></div></div>
-      </div>
       <div class="crosshair"></div>
       <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p></div></div>
     `;
@@ -177,9 +171,9 @@ export class Game {
     const playerMaterial = new CANNON.Material("player");
     this.player = new CANNON.Body({
       mass: 70,
-      shape: new CANNON.Sphere(0.48),
+      shape: new CANNON.Sphere(0.5),
       material: playerMaterial,
-      linearDamping: 0.86,
+      linearDamping: 0.78,
       angularDamping: 1,
       fixedRotation: true,
     });
@@ -189,7 +183,7 @@ export class Game {
   }
 
   private createFlashlight() {
-    this.flashlight = new THREE.SpotLight(0xfff0c7, this.mobile ? 12 : 18, 30, Math.PI / 7.5, 0.42, 1.3);
+    this.flashlight = new THREE.SpotLight(0xfff0c7, this.mobile ? 12 : 18, 34, Math.PI / 7.5, 0.42, 1.3);
     this.flashlight.visible = false;
     this.flashlight.castShadow = !this.mobile;
     this.flashlightTarget = new THREE.Object3D();
@@ -211,6 +205,7 @@ export class Game {
     hat.position.y = 1.78;
     group.name = name;
     group.add(body, hat);
+    group.scale.setScalar(0.5);
     return group;
   }
 
@@ -225,20 +220,17 @@ export class Game {
     this.pitch = THREE.MathUtils.clamp(this.pitch - input.lookY * lookScale, -1.15, 1.05);
 
     const moving = Math.abs(input.forward) > 0.08 || Math.abs(input.right) > 0.08;
-    const sprinting = input.sprint && moving && this.stamina > 0.05;
-    this.stamina = THREE.MathUtils.clamp(this.stamina + (sprinting ? -0.18 : 0.12) * dt, 0, 1);
-    const speed = input.crouch ? 2.35 : sprinting ? 6.8 : 4.45;
+    const sprinting = input.sprint && moving;
+    const speed = input.crouch ? 3.4 : sprinting ? 9.4 : 6.2;
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
-    const vx = (input.right * cos + input.forward * sin) * speed;
-    const vz = (-input.right * sin + input.forward * cos) * speed;
-    const responsiveness = Math.min(1, dt * (input.crouch ? 10 : 12));
+    const vx = (input.right * cos - input.forward * sin) * speed;
+    const vz = (-input.right * sin - input.forward * cos) * speed;
+    const responsiveness = Math.min(1, dt * (input.crouch ? 14 : 18));
     this.player.velocity.x += (vx - this.player.velocity.x) * responsiveness;
     this.player.velocity.z += (vz - this.player.velocity.z) * responsiveness;
 
-    if (input.flashlightPressed && this.battery > 0.01) this.flashlightOn = !this.flashlightOn;
-    if (this.flashlightOn) this.battery = Math.max(0, this.battery - dt * 0.009);
-    if (this.battery <= 0) this.flashlightOn = false;
+    if (input.flashlightPressed) this.flashlightOn = !this.flashlightOn;
 
     this.physics.step(1 / 60, dt, 3);
     const p = this.player.position;
@@ -247,7 +239,7 @@ export class Game {
       this.player.velocity.setZero();
     }
 
-    const eyeHeight = input.crouch ? 0.62 : 1.05;
+    const eyeHeight = input.crouch ? 1.0 : 1.62;
     this.camera.position.set(p.x, p.y + eyeHeight, p.z);
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
@@ -296,7 +288,7 @@ export class Game {
 
     if (!hit) return;
     this.interactionTargetId = String(hit.object.userData.targetId);
-    this.interactionPrompt = `E / USE · ${String(hit.object.userData.prompt || "INTERACT")}`;
+    this.interactionPrompt = `E / CLICK · ${String(hit.object.userData.prompt || "INTERACT")}`;
   }
 
   private updateFlashlight() {
@@ -311,13 +303,9 @@ export class Game {
     const objective = this.mount.querySelector<HTMLElement>("#objectiveText");
     const promptElement = this.mount.querySelector<HTMLElement>("#promptText");
     const threat = this.mount.querySelector<HTMLElement>("#threatText");
-    const staminaFill = this.mount.querySelector<HTMLElement>("#staminaFill");
-    const batteryFill = this.mount.querySelector<HTMLElement>("#batteryFill");
     if (objective) objective.textContent = `CAMPERS SAFE ${safe} / ${total}`;
     if (promptElement) promptElement.textContent = prompt;
     if (threat) threat.textContent = monsterAwake ? "SOMETHING IS MOVING IN THE TREES" : "THE WOODS ARE QUIET";
-    if (staminaFill) staminaFill.style.width = `${Math.round(this.stamina * 100)}%`;
-    if (batteryFill) batteryFill.style.width = `${Math.round(this.battery * 100)}%`;
   }
 
   private showRoundEnd(won: boolean) {
