@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
+import { ExternalModelLibrary, type CampModelKey } from "./ExternalModelLibrary";
 
 type PropKind = "cooler" | "box" | "basketball" | "barrel";
 
@@ -14,9 +15,11 @@ type PhysicalProp = {
 export class PhysicalProps {
   readonly interactables: THREE.Object3D[] = [];
   private readonly props = new Map<string, PhysicalProp>();
+  private readonly models: ExternalModelLibrary;
   private heldId: string | null = null;
 
   constructor(private scene: THREE.Scene, private physics: CANNON.World, private mobile: boolean) {
+    this.models = new ExternalModelLibrary(mobile);
     this.addCooler("prop:cooler-red", "RED COOLER", -12, 0.65, 18.5, 0xb83e32);
     this.addCooler("prop:cooler-teal", "TEAL COOLER", 6.5, 0.65, -19.5, 0x35746d);
     this.addBox("prop:box-1", "CARDBOARD BOX", -34, 0.7, -34, 0.95);
@@ -81,13 +84,36 @@ export class PhysicalProps {
     }
   }
 
-  private register(prop: PhysicalProp, pickTarget: THREE.Object3D) {
-    pickTarget.userData.targetId = prop.id;
-    pickTarget.userData.prompt = `PICK UP ${prop.label}`;
-    this.interactables.push(pickTarget);
+  private register(prop: PhysicalProp, hitbox: THREE.Object3D) {
+    hitbox.userData.targetId = prop.id;
+    hitbox.userData.prompt = `PICK UP ${prop.label}`;
+    this.interactables.push(hitbox);
     this.props.set(prop.id, prop);
     this.scene.add(prop.root);
     this.physics.addBody(prop.body);
+  }
+
+  private makeHitbox(width: number, height: number, depth: number) {
+    const material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+    return new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+  }
+
+  private upgradeVisual(
+    root: THREE.Group,
+    fallback: THREE.Object3D,
+    key: CampModelKey,
+    yOffset: number,
+    scaleMultiplier = 1,
+  ) {
+    void this.models.clone(key).then((model) => {
+      if (!model) return;
+      model.scale.multiplyScalar(scaleMultiplier);
+      model.position.y += yOffset;
+      root.add(model);
+      fallback.visible = false;
+    }).catch((error) => {
+      console.warn(`[assets] ${key} upgrade failed; fallback remains visible`, error);
+    });
   }
 
   private bodyBase(mass: number, shape: CANNON.Shape, x: number, y: number, z: number) {
@@ -101,6 +127,7 @@ export class PhysicalProps {
 
   private addCooler(id: string, label: string, x: number, y: number, z: number, color: number) {
     const root = new THREE.Group();
+    const fallback = new THREE.Group();
     const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.58, metalness: 0.02 });
     const white = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.46 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x323838, roughness: 0.42, metalness: 0.22 });
@@ -114,54 +141,67 @@ export class PhysicalProps {
     const handle = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.035, 8, 20, Math.PI), dark);
     handle.rotation.z = Math.PI / 2;
     handle.position.y = 0.63;
-    root.add(bodyMesh, lid, latchL, latchR, handle);
-    root.traverse((obj) => { if (obj instanceof THREE.Mesh) { obj.castShadow = !this.mobile; obj.receiveShadow = !this.mobile; } });
+    fallback.add(bodyMesh, lid, latchL, latchR, handle);
+    fallback.traverse((obj) => { if (obj instanceof THREE.Mesh) { obj.castShadow = !this.mobile; obj.receiveShadow = !this.mobile; } });
+    const hitbox = this.makeHitbox(1.3, 0.9, 0.85);
+    root.add(fallback, hitbox);
     const body = this.bodyBase(6, new CANNON.Box(new CANNON.Vec3(0.64, 0.45, 0.42)), x, y, z);
-    this.register({ id, label, kind: "cooler", root, body }, bodyMesh);
+    this.register({ id, label, kind: "cooler", root, body }, hitbox);
+    this.upgradeVisual(root, fallback, "cooler", -0.45);
   }
 
   private addBox(id: string, label: string, x: number, y: number, z: number, size: number) {
     const root = new THREE.Group();
+    const fallback = new THREE.Group();
     const cardboard = new THREE.MeshStandardMaterial({ color: 0x9b734e, roughness: 0.96 });
     const tape = new THREE.MeshStandardMaterial({ color: 0xc3a77c, roughness: 0.78 });
     const box = new THREE.Mesh(new THREE.BoxGeometry(size, size * 0.78, size * 0.9), cardboard);
     const strip = new THREE.Mesh(new THREE.BoxGeometry(size * 0.18, size * 0.79, size * 0.91), tape);
-    root.add(box, strip);
-    root.traverse((obj) => { if (obj instanceof THREE.Mesh) obj.castShadow = !this.mobile; });
+    fallback.add(box, strip);
+    fallback.traverse((obj) => { if (obj instanceof THREE.Mesh) obj.castShadow = !this.mobile; });
+    const hitbox = this.makeHitbox(size, size * 0.8, size * 0.9);
+    root.add(fallback, hitbox);
     const body = this.bodyBase(3.2, new CANNON.Box(new CANNON.Vec3(size / 2, size * 0.39, size * 0.45)), x, y, z);
-    this.register({ id, label, kind: "box", root, body }, box);
+    this.register({ id, label, kind: "box", root, body }, hitbox);
+    this.upgradeVisual(root, fallback, "cardboardBox", -size * 0.39, size / 0.95);
   }
 
   private addBasketball(id: string, label: string, x: number, y: number, z: number) {
     const root = new THREE.Group();
     const orange = new THREE.MeshStandardMaterial({ color: 0xc66529, roughness: 0.78 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x2b201b, roughness: 0.7 });
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.26, this.mobile ? 16 : 24, this.mobile ? 10 : 16), orange);
-    const seamA = new THREE.Mesh(new THREE.TorusGeometry(0.255, 0.008, 6, 28), dark);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.26, this.mobile ? 20 : 32, this.mobile ? 12 : 20), orange);
+    const seamA = new THREE.Mesh(new THREE.TorusGeometry(0.255, 0.008, 8, 36), dark);
     seamA.rotation.x = Math.PI / 2;
     const seamB = seamA.clone();
     seamB.rotation.y = Math.PI / 2;
     root.add(ball, seamA, seamB);
     ball.castShadow = !this.mobile;
+    const hitbox = this.makeHitbox(0.54, 0.54, 0.54);
+    root.add(hitbox);
     const body = this.bodyBase(0.7, new CANNON.Sphere(0.26), x, y, z);
     body.material = new CANNON.Material({ restitution: 0.56, friction: 0.5 });
-    this.register({ id, label, kind: "basketball", root, body }, ball);
+    this.register({ id, label, kind: "basketball", root, body }, hitbox);
   }
 
   private addBarrel(id: string, label: string, x: number, y: number, z: number) {
     const root = new THREE.Group();
+    const fallback = new THREE.Group();
     const barrelMat = new THREE.MeshStandardMaterial({ color: 0x617068, roughness: 0.62, metalness: 0.18 });
     const bandMat = new THREE.MeshStandardMaterial({ color: 0x343b38, roughness: 0.48, metalness: 0.45 });
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.39, 0.9, this.mobile ? 12 : 20), barrelMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.39, 0.9, this.mobile ? 14 : 24), barrelMat);
     for (const yy of [-0.31, 0.31]) {
-      const band = new THREE.Mesh(new THREE.TorusGeometry(0.385, 0.025, 6, this.mobile ? 12 : 20), bandMat);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.385, 0.025, 8, this.mobile ? 16 : 28), bandMat);
       band.rotation.x = Math.PI / 2;
       band.position.y = yy;
-      root.add(band);
+      fallback.add(band);
     }
-    root.add(barrel);
+    fallback.add(barrel);
     barrel.castShadow = !this.mobile;
+    const hitbox = this.makeHitbox(0.78, 0.92, 0.78);
+    root.add(fallback, hitbox);
     const body = this.bodyBase(8.5, new CANNON.Cylinder(0.38, 0.38, 0.9, 16), x, y, z);
-    this.register({ id, label, kind: "barrel", root, body }, barrel);
+    this.register({ id, label, kind: "barrel", root, body }, hitbox);
+    this.upgradeVisual(root, fallback, "barrel", -0.45);
   }
 }
