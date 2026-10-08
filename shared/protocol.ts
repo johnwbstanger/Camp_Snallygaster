@@ -19,9 +19,15 @@ export type CamperState = {
   position: { x: number; y: number; z: number };
 };
 
+export type DoorState = {
+  id: string;
+  open: boolean;
+};
+
 export type SharedRoundState = {
   phase: "LOBBY" | "ACTIVE" | "WON" | "LOST";
   campers: CamperState[];
+  doors: DoorState[];
   monster: { x: number; y: number; z: number; awake: boolean };
   campersSafe: number;
   campersFound: number;
@@ -32,7 +38,7 @@ export type ClientMessage =
   | { type: "join"; name: string; roomCode: string }
   | { type: "start" }
   | { type: "move"; pose: PlayerPose }
-  | { type: "interact" }
+  | { type: "interact"; targetId?: string }
   | { type: "ping"; at: number };
 
 export type ServerMessage =
