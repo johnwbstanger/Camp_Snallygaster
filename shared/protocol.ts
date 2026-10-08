@@ -36,8 +36,8 @@ export type ClientMessage =
   | { type: "ping"; at: number };
 
 export type ServerMessage =
-  | { type: "welcome"; playerId: string; roomCode: string; hostId: string; players: PlayerState[] }
-  | { type: "roster"; roomCode: string; hostId: string; players: PlayerState[] }
+  | { type: "welcome"; playerId: string; roomCode: string; hostId: string; maxPlayers: number; players: PlayerState[] }
+  | { type: "roster"; roomCode: string; hostId: string; maxPlayers: number; players: PlayerState[] }
   | { type: "snapshot"; players: PlayerState[] }
   | { type: "round"; state: SharedRoundState }
   | { type: "start" }
