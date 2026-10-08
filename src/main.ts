@@ -1,4 +1,5 @@
 import "./style.css";
+import type { SharedRoundState } from "../shared/protocol";
 import { Game } from "./game/Game";
 import { MultiplayerClient, type RoomInfo } from "./networking/Multiplayer";
 
@@ -59,6 +60,7 @@ let game: Game | null = null;
 let starting = false;
 let multiplayer: MultiplayerClient | null = null;
 let room: RoomInfo | null = null;
+let latestRound: SharedRoundState | null = null;
 
 function playerName() {
   return nameInput.value.trim().slice(0, 18) || "Counselor";
@@ -68,7 +70,7 @@ async function launchGame(networked: boolean) {
   if (game || starting) return;
   starting = true;
   try {
-    game = new Game(viewport);
+    game = new Game(viewport, networked);
     await game.start();
     menu.classList.add("hidden");
     lobby.classList.add("hidden");
@@ -76,6 +78,8 @@ async function launchGame(networked: boolean) {
     exitButton.classList.remove("hidden");
     if (networked && multiplayer) {
       game.onPose((pose) => multiplayer?.sendPose(pose));
+      game.onInteract(() => multiplayer?.interact());
+      if (latestRound) game.setSharedRoundState(latestRound);
     }
     game.resume();
   } catch (error) {
@@ -98,6 +102,10 @@ function ensureMultiplayer() {
     renderLobby(nextRoom);
   });
   multiplayer.onSnapshot((players) => game?.setRemotePlayers(players, room?.playerId ?? null));
+  multiplayer.onRound((state) => {
+    latestRound = state;
+    game?.setSharedRoundState(state);
+  });
   multiplayer.onStart(() => void launchGame(true));
   multiplayer.onError((message) => {
     status.textContent = message;
@@ -166,6 +174,7 @@ function exitToMenu() {
   multiplayer?.close();
   multiplayer = null;
   room = null;
+  latestRound = null;
   viewport.replaceChildren();
   viewport.classList.add("hidden");
   exitButton.classList.add("hidden");
