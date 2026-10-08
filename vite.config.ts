@@ -11,7 +11,9 @@ export default defineConfig({
     outDir: "dist/client",
     target: "es2020",
     minify: "esbuild",
-    sourcemap: true,
+    sourcemap: false,
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 700,
   },
   optimizeDeps: {
     include: ["three", "cannon-es"],
