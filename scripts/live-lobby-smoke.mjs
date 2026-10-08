@@ -1,14 +1,19 @@
 import WebSocket from "ws";
 
-const candidates = String(process.env.LIVE_SERVER_URLS || "https://camp-snallygaster-rebuild.onrender.com,https://camp-snallygaster.onrender.com,https://camp-snallygaster-extraction--willstanger.replit.app")
+const bases = String(process.env.LIVE_SERVER_URLS || "https://camp-snallygaster-rebuild.onrender.com,https://camp-snallygaster.onrender.com,https://camp-snallygaster-extraction--willstanger.replit.app")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
 
+const candidates = [];
+for (const base of bases) {
+  const wsBase = base.replace(/\/$/, "").replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+  candidates.push(`${wsBase}/ws`, `${wsBase}/`);
+}
+
 const failures = [];
 let success = null;
-for (const base of candidates) {
-  const endpoint = `${base.replace(/\/$/, "").replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/ws`;
+for (const endpoint of candidates) {
   try {
     const welcome = await createRoom(endpoint, 45000);
     if (!welcome.roomCode || !welcome.playerId || welcome.playerId !== welcome.hostId || welcome.maxPlayers !== 15) {
