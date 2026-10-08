@@ -29,9 +29,9 @@ if (!multiplierMatch) throw new Error("Movement contract missing SPRINT_MULTIPLI
 const baseSpeed = Number(baseMatch[1]);
 const sprintMultiplier = Number(multiplierMatch[1]);
 const sprintSpeed = baseSpeed * sprintMultiplier;
-if (baseSpeed !== 10.35) throw new Error(`Normal movement must equal previous sprint speed 10.35; got ${baseSpeed}`);
+if (baseSpeed !== 18.1125) throw new Error(`Normal movement must equal previous sprint speed 18.1125; got ${baseSpeed}`);
 if (sprintMultiplier !== 1.75) throw new Error(`Sprint multiplier must be 1.75; got ${sprintMultiplier}`);
-if (Math.abs(sprintSpeed - 18.1125) > 1e-9) throw new Error(`Sprint speed must be 18.1125; got ${sprintSpeed}`);
+if (Math.abs(sprintSpeed - 31.696875) > 1e-9) throw new Error(`Sprint speed must be 31.696875; got ${sprintSpeed}`);
 
 if (!gameSource.includes("linearDamping: 0")) throw new Error("Player damping would reduce authored horizontal speed");
 if (!gameSource.includes("this.player.velocity.x = vx") || !gameSource.includes("this.player.velocity.z = vz")) {
@@ -60,4 +60,4 @@ if (!(dAtZero.x > 0 && Math.abs(dAtZero.x - baseSpeed) < 1e-9)) throw new Error(
 const diagonal = velocity(1, 1, 0, baseSpeed);
 if (Math.abs(Math.hypot(diagonal.x, diagonal.z) - baseSpeed) > 1e-9) throw new Error("Diagonal movement is faster than cardinal movement");
 
-console.log("MOVEMENT CONTRACT PASS: W forward, S backward, normalized diagonal, walk 10.35, sprint 18.1125, high-speed compound collision enabled");
+console.log("MOVEMENT CONTRACT PASS: W forward, S backward, normalized diagonal, walk 18.1125, sprint 31.696875, high-speed compound collision enabled");

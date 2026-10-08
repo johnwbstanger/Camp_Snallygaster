@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import type { CamperState, ClientMessage, DoorState, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "../shared/protocol.js";
+import { hasCampLineOfSight, MONSTER_HOME } from "../shared/campVision.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -163,7 +164,7 @@ function createRoundState(phase: SharedRoundState["phase"]): SharedRoundState {
       position: { x, y, z },
     })),
     doors: DOORS.map(({ id }): DoorState => ({ id, open: false })),
-    monster: { x: -32, y: 0, z: -29, awake: false },
+    monster: { x: MONSTER_HOME.x, y: MONSTER_HOME.y, z: MONSTER_HOME.z, awake: false },
     campersSafe: 0,
     campersFound: 0,
   };
@@ -201,6 +202,7 @@ function handleInteract(room: Room, playerId: string, targetId?: string) {
     if (!definition || !door) return;
     if (distance2D(player.pose, definition) > 4.0) return;
     door.open = !door.open;
+    if (!door.open && room.round.monster.awake && !nearestVisiblePlayer(room)) disengageMonster(room);
     return;
   }
 
@@ -215,6 +217,9 @@ function handleInteract(room: Room, playerId: string, targetId?: string) {
     nearest.state = "FOLLOWING";
     nearest.followingPlayerId = playerId;
     room.round.monster.awake = true;
+    room.round.monster.x = MONSTER_HOME.x;
+    room.round.monster.y = MONSTER_HOME.y;
+    room.round.monster.z = MONSTER_HOME.z;
     room.round.campersFound = room.round.campers.filter((camper) => camper.state !== "HIDDEN").length;
   }
 }
@@ -245,7 +250,6 @@ function updateRound(room: Room, dt: number) {
 
   room.round.campersFound = room.round.campers.filter((camper) => camper.state !== "HIDDEN").length;
   room.round.campersSafe = room.round.campers.filter((camper) => camper.state === "SAFE").length;
-  room.round.monster.awake ||= room.round.campersFound > 0;
 
   if (room.round.campersSafe === room.round.campers.length) {
     room.round.phase = "WON";
@@ -254,18 +258,37 @@ function updateRound(room: Room, dt: number) {
   }
 
   if (room.round.monster.awake && room.players.size > 0) {
-    let target: PlayerState | null = null;
-    let bestDistance = Infinity;
-    for (const player of room.players.values()) {
-      const distance = distance2D(player.pose, room.round.monster);
-      if (distance < bestDistance) { bestDistance = distance; target = player; }
-    }
-    if (target) {
+    const target = nearestVisiblePlayer(room);
+    if (!target) {
+      disengageMonster(room);
+    } else {
+      const bestDistance = distance2D(target.pose, room.round.monster);
       moveToward(room.round.monster, target.pose.x, target.pose.z, (1.55 + room.round.campersFound * 0.12) * dt);
       if (bestDistance < 1.15) room.round.phase = "LOST";
     }
   }
   broadcastRound(room);
+}
+
+function nearestVisiblePlayer(room: Room) {
+  let target: PlayerState | null = null;
+  let bestDistance = Infinity;
+  for (const player of room.players.values()) {
+    if (!hasCampLineOfSight(room.round.monster, player.pose, room.round.doors)) continue;
+    const distance = distance2D(player.pose, room.round.monster);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      target = player;
+    }
+  }
+  return target;
+}
+
+function disengageMonster(room: Room) {
+  room.round.monster.awake = false;
+  room.round.monster.x = MONSTER_HOME.x;
+  room.round.monster.y = MONSTER_HOME.y;
+  room.round.monster.z = MONSTER_HOME.z;
 }
 
 function leaveCurrentRoom(socket: WebSocket) {

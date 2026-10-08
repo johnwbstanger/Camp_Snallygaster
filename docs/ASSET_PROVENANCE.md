@@ -7,8 +7,9 @@ Camp Snallygaster may load third-party 3D models at runtime, but only when the s
 | Runtime key | Asset | Source | License | Notes |
 | --- | --- | --- | --- | --- |
 | `camper`, `camperMale` | Quaternius Universal Base Characters — Teen Male Full Body | Quaternius pack vendored in `dustinc555/mygame` from the official Quaternius release | CC0 1.0 Universal | Actual teen-proportion humanoid camper body. Gameplay additionally scales the camper root to 50% of the previous rendered camper size. |
-| `camperFemale` | Quaternius Universal Base Characters — Teen Female Full Body | Quaternius pack vendored in `dustinc555/mygame` from the official Quaternius release | CC0 1.0 Universal | Teen-proportion female humanoid body available to the camper visual pipeline. |
-| `counselor` | Quaternius Ultimate Modular Men — Casual Character | Quaternius pack mirrored in `Hhk187/Zomopocalypse` | CC0 | Humanoid visual for remote counselors. Source pack is a Quaternius public-domain asset pack. |
+| `camperFemale` | Quaternius Universal Base Characters — Teen Female Full Body | Quaternius pack vendored in `dustinc555/mygame` from the official Quaternius release | CC0 1.0 Universal | Teen-proportion female humanoid body used for alternating camper renders. |
+| `counselor`, `counselorMale` | Quaternius Universal Base Characters — Regular Male Full Body | Quaternius pack vendored in `dustinc555/mygame` from the official Quaternius release | CC0 1.0 Universal | Adult-proportion male humanoid counselor body. |
+| `counselorFemale` | Quaternius Universal Base Characters — Regular Female Full Body | Quaternius pack vendored in `dustinc555/mygame` from the official Quaternius release | CC0 1.0 Universal | Adult-proportion female humanoid counselor body. |
 | `cooler` | Drinks Cooler | `3dassets.dev` asset 28560 | CC0 | Runtime GLB. Local collision remains authoritative. |
 | `canoe` | Canoe | `3dassets.dev` asset 28833 | CC0 | Runtime GLB. Local collision remains authoritative. |
 | `cabin` | Driver Rest Cabin | `3dassets.dev` asset 34212 | CC0 | Optional visual reference/detail source. Camp cabin collision and entrances remain local and deterministic. |
@@ -18,11 +19,15 @@ Camp Snallygaster may load third-party 3D models at runtime, but only when the s
 
 ## Character source verification
 
-Quaternius **Universal Base Characters** is the camper-character source. The official pack describes regular and teen male/female humanoid models, animation-friendly topology, a humanoid rig, glTF output, and a CC0 dedication. The repository mirror used by the runtime preserves the Quaternius vendor directory and includes both `Teen_Male_FullBody.gltf` and `Teen_Female_FullBody.gltf` plus their referenced binary/texture files.
+Quaternius **Universal Base Characters** is the active camper and counselor base-character source. The official pack describes regular and teen male/female humanoid models, animation-friendly topology, a humanoid rig, glTF output, and a CC0 dedication. The repository mirror used by the runtime preserves the Quaternius vendor directory and includes the teen and regular male/female full-body glTF files plus their referenced binary/texture files.
 
 Official source: https://quaternius.com/packs/universalbasecharacters.html
 
 Vendored mirror revision used by the runtime: `dustinc555/mygame@f2cc1affbca335b74ee44ecbd765db4bd17f0f05`
+
+## Pending licensed replacement source
+
+The purchased TurboSquid **3D - Camping Model / Low Poly Campsite - Camping Pack** may be integrated as a local visual override after the licensed files are supplied by the project owner. Paid TurboSquid files are not fetched, mirrored, or redistributed automatically. When supplied, those models may replace matching visual roots such as camping boxes, tables, lanterns, tents, logs, trees, or vehicle/camp clutter while existing deterministic collision remains authoritative.
 
 ## Rules
 

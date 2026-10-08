@@ -21,6 +21,8 @@ jobs:
         run: node scripts/movement-contract.mjs
       - name: Verify high-speed wall collision contract
         run: node scripts/collision-contract.mjs
+      - name: Verify Snallygaster line-of-sight and disengage contract
+        run: npx tsx scripts/snallygaster-contract.ts
       - run: npm run build
       - name: Verify production entry exists
         run: test -f dist/client/index.html && grep -q "assets/" dist/client/index.html
