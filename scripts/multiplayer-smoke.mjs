@@ -24,15 +24,12 @@ function openClient() {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const timer = setTimeout(() => reject(new Error("websocket connection timed out")), 4000);
-    socket.once("open", () => {
-      clearTimeout(timer);
-      resolve(socket);
-    });
+    socket.once("open", () => { clearTimeout(timer); resolve(socket); });
     socket.once("error", reject);
   });
 }
 
-function nextMessage(socket, predicate, timeoutMs = 4000) {
+function nextMessage(socket, predicate, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       socket.off("message", handler);
@@ -49,9 +46,7 @@ function nextMessage(socket, predicate, timeoutMs = 4000) {
   });
 }
 
-function send(socket, message) {
-  socket.send(JSON.stringify(message));
-}
+function send(socket, message) { socket.send(JSON.stringify(message)); }
 
 let host;
 let guest;
@@ -70,20 +65,30 @@ try {
   send(guest, { type: "join", name: "Guest Tester", roomCode: hostWelcome.roomCode });
   const guestWelcome = await guestWelcomePromise;
   const hostRoster = await hostRosterPromise;
-
   if (guestWelcome.roomCode !== hostWelcome.roomCode) throw new Error("guest joined wrong room");
   if (hostRoster.players.length !== 2) throw new Error("two-player roster was not synchronized");
 
   const hostStartPromise = nextMessage(host, (m) => m.type === "start");
   const guestStartPromise = nextMessage(guest, (m) => m.type === "start");
+  const initialRoundPromise = nextMessage(guest, (m) => m.type === "round" && m.state?.phase === "ACTIVE");
   send(host, { type: "start" });
-  await Promise.all([hostStartPromise, guestStartPromise]);
+  await Promise.all([hostStartPromise, guestStartPromise, initialRoundPromise]);
 
-  const guestSnapshotPromise = nextMessage(guest, (m) => m.type === "snapshot" && m.players?.some((p) => p.id === hostWelcome.playerId && Math.abs(p.pose.x - 4.25) < 0.001));
-  send(host, { type: "move", pose: { x: 4.25, y: 1.4, z: 8.5, yaw: 1.2 } });
+  const guestSnapshotPromise = nextMessage(guest, (m) => m.type === "snapshot" && m.players?.some((p) => p.id === hostWelcome.playerId && Math.abs(p.pose.x + 21) < 0.001));
+  send(host, { type: "move", pose: { x: -21, y: 1.4, z: 8, yaw: 1.2 } });
   await guestSnapshotPromise;
+  await wait(120);
 
-  console.log(`MULTIPLAYER SMOKE PASS: ${hostWelcome.roomCode}, create/join/roster/start/movement verified`);
+  const sharedRescuePromise = nextMessage(guest, (m) =>
+    m.type === "round" &&
+    m.state?.campersFound === 1 &&
+    m.state?.monster?.awake === true &&
+    m.state?.campers?.some((camper) => camper.id === "camper-1" && camper.state === "FOLLOWING" && camper.followingPlayerId === hostWelcome.playerId),
+  );
+  send(host, { type: "interact" });
+  await sharedRescuePromise;
+
+  console.log(`MULTIPLAYER SMOKE PASS: ${hostWelcome.roomCode}, create/join/roster/start/movement/rescue/threat verified`);
 } finally {
   try { host?.close(); } catch {}
   try { guest?.close(); } catch {}
