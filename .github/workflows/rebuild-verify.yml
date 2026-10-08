@@ -17,10 +17,14 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - name: Verify Lethal Company movement and keybind contract
+        run: npm run smoke:movement
       - run: npm run build
       - name: Verify production entry exists
         run: test -f dist/client/index.html && grep -q "assets/" dist/client/index.html
       - name: Verify cross-play room, movement, rescue, and threat sync
         run: npm run smoke:multiplayer
-      - name: Verify production HTTP assets and WebSocket endpoint
+      - name: Verify production HTTP assets and create-room handshake
         run: npm run smoke:production
+      - name: Verify live deployed custom lobby creation
+        run: npm run smoke:live-lobby
