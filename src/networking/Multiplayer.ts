@@ -4,6 +4,7 @@ export type RoomInfo = {
   roomCode: string;
   playerId: string;
   hostId: string;
+  maxPlayers: number;
   players: PlayerState[];
 };
 
@@ -34,12 +35,22 @@ export class MultiplayerClient {
       const endpoint = this.endpoint();
       const socket = new WebSocket(endpoint);
       this.socket = socket;
-      const timeout = window.setTimeout(() => {
+      let settled = false;
+
+      const finishError = (message: string) => {
+        if (settled) return;
+        settled = true;
         try { socket.close(); } catch {}
-        reject(new Error("Multiplayer server connection timed out"));
-      }, 6000);
+        reject(new Error(message));
+      };
+
+      const timeout = window.setTimeout(() => {
+        finishError("Multiplayer server is taking too long to wake up. Try again in a few seconds.");
+      }, 20000);
 
       socket.addEventListener("open", () => {
+        if (settled) return;
+        settled = true;
         window.clearTimeout(timeout);
         this.bindSocket(socket);
         resolve();
@@ -47,7 +58,7 @@ export class MultiplayerClient {
 
       socket.addEventListener("error", () => {
         window.clearTimeout(timeout);
-        reject(new Error("Could not reach multiplayer server"));
+        finishError("Could not reach the multiplayer server");
       }, { once: true });
     }).finally(() => {
       this.connectPromise = null;
@@ -77,7 +88,7 @@ export class MultiplayerClient {
   onError(callback: (message: string) => void) { this.onErrorCallback = callback; }
 
   close() {
-    this.pendingWelcome && window.clearTimeout(this.pendingWelcome.timer);
+    if (this.pendingWelcome) window.clearTimeout(this.pendingWelcome.timer);
     this.pendingWelcome = null;
     this.roomInfo = null;
     this.socket?.close();
@@ -94,7 +105,7 @@ export class MultiplayerClient {
       const timer = window.setTimeout(() => {
         this.pendingWelcome = null;
         reject(new Error("Camp request timed out"));
-      }, 6000);
+      }, 12000);
       this.pendingWelcome = { resolve, reject, timer };
       this.send(message);
     });
@@ -114,6 +125,7 @@ export class MultiplayerClient {
           roomCode: message.roomCode,
           playerId: message.playerId,
           hostId: message.hostId,
+          maxPlayers: message.maxPlayers,
           players: message.players,
         };
         this.roomInfo = room;
@@ -128,7 +140,13 @@ export class MultiplayerClient {
 
       if (message.type === "roster") {
         if (!this.roomInfo) return;
-        this.roomInfo = { ...this.roomInfo, roomCode: message.roomCode, hostId: message.hostId, players: message.players };
+        this.roomInfo = {
+          ...this.roomInfo,
+          roomCode: message.roomCode,
+          hostId: message.hostId,
+          maxPlayers: message.maxPlayers,
+          players: message.players,
+        };
         this.onRosterCallback?.(this.roomInfo);
         return;
       }
@@ -164,6 +182,7 @@ export class MultiplayerClient {
         this.pendingWelcome.reject(new Error("Multiplayer server disconnected"));
         this.pendingWelcome = null;
       }
+      if (this.socket === socket) this.socket = null;
       this.onErrorCallback?.("Multiplayer server disconnected");
     });
   }
