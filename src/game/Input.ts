@@ -6,6 +6,10 @@ export type InputSnapshot = {
   sprint: boolean;
   crouch: boolean;
   interactPressed: boolean;
+  usePressed: boolean;
+  dropPressed: boolean;
+  jumpPressed: boolean;
+  scanPressed: boolean;
   flashlightPressed: boolean;
 };
 
@@ -20,9 +24,13 @@ export class InputManager {
   private lookLastX = 0;
   private lookLastY = 0;
   private interactPressed = false;
+  private usePressed = false;
+  private dropPressed = false;
+  private jumpPressed = false;
+  private scanPressed = false;
   private flashlightPressed = false;
-  private sprintToggled = false;
-  private crouchToggled = false;
+  private touchSprint = false;
+  private touchCrouch = false;
   private cleanup: Array<() => void> = [];
   readonly ui: HTMLDivElement;
 
@@ -47,26 +55,37 @@ export class InputManager {
   }
 
   sample(): InputSnapshot {
-    const keyboardForward = (this.keys.has("KeyW") || this.keys.has("ArrowUp") ? 1 : 0) - (this.keys.has("KeyS") || this.keys.has("ArrowDown") ? 1 : 0);
-    const keyboardRight = (this.keys.has("KeyD") || this.keys.has("ArrowRight") ? 1 : 0) - (this.keys.has("KeyA") || this.keys.has("ArrowLeft") ? 1 : 0);
-    // Game.ts maps negative local forward to the camera's visual forward axis (-Z),
-    // so keyboard/touch intent is inverted here to keep W/up = forward and S/down = back.
-    const forward = Math.max(-1, Math.min(1, -keyboardForward + this.moveY));
+    const keyboardForward = (this.keys.has("KeyW") || this.keys.has("ArrowUp") ? 1 : 0)
+      - (this.keys.has("KeyS") || this.keys.has("ArrowDown") ? 1 : 0);
+    const keyboardRight = (this.keys.has("KeyD") || this.keys.has("ArrowRight") ? 1 : 0)
+      - (this.keys.has("KeyA") || this.keys.has("ArrowLeft") ? 1 : 0);
+    const forward = Math.max(-1, Math.min(1, keyboardForward - this.moveY));
     const right = Math.max(-1, Math.min(1, keyboardRight + this.moveX));
-    const crouch = this.crouchToggled;
-    const snapshot = {
+    const crouch = this.keys.has("ControlLeft") || this.keys.has("ControlRight") || this.touchCrouch;
+    const sprint = !crouch && (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.touchSprint);
+
+    const snapshot: InputSnapshot = {
       forward,
       right,
       lookX: this.lookX,
       lookY: this.lookY,
-      sprint: !crouch && this.sprintToggled,
+      sprint,
       crouch,
       interactPressed: this.interactPressed,
+      usePressed: this.usePressed,
+      dropPressed: this.dropPressed,
+      jumpPressed: this.jumpPressed,
+      scanPressed: this.scanPressed,
       flashlightPressed: this.flashlightPressed,
     };
+
     this.lookX = 0;
     this.lookY = 0;
     this.interactPressed = false;
+    this.usePressed = false;
+    this.dropPressed = false;
+    this.jumpPressed = false;
+    this.scanPressed = false;
     this.flashlightPressed = false;
     return snapshot;
   }
@@ -82,17 +101,9 @@ export class InputManager {
     const down = (event: KeyboardEvent) => {
       if (!this.keys.has(event.code)) {
         if (event.code === "KeyE") this.interactPressed = true;
+        if (event.code === "KeyG") this.dropPressed = true;
+        if (event.code === "Space") this.jumpPressed = true;
         if (event.code === "KeyF") this.flashlightPressed = true;
-        if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
-          this.sprintToggled = !this.sprintToggled;
-          if (this.sprintToggled) this.setCrouch(false);
-          this.syncActionButtons();
-        }
-        if (event.code === "ControlLeft" || event.code === "ControlRight" || event.code === "KeyC") {
-          this.setCrouch(!this.crouchToggled);
-          if (this.crouchToggled) this.sprintToggled = false;
-          this.syncActionButtons();
-        }
       }
       this.keys.add(event.code);
     };
@@ -103,21 +114,28 @@ export class InputManager {
   }
 
   private bindMouse() {
-    const click = (event: MouseEvent) => {
+    const down = (event: MouseEvent) => {
       if (document.pointerLockElement !== this.canvas) {
-        void this.canvas.requestPointerLock?.();
+        if (event.button === 0) void this.canvas.requestPointerLock?.();
         return;
       }
-      if (event.button === 0) this.interactPressed = true;
+      if (event.button === 0) this.usePressed = true;
+      if (event.button === 2) this.scanPressed = true;
     };
     const move = (event: MouseEvent) => {
       if (document.pointerLockElement !== this.canvas) return;
       this.lookX += event.movementX;
       this.lookY += event.movementY;
     };
-    this.canvas.addEventListener("mousedown", click);
+    const context = (event: MouseEvent) => event.preventDefault();
+    this.canvas.addEventListener("mousedown", down);
+    this.canvas.addEventListener("contextmenu", context);
     window.addEventListener("mousemove", move);
-    this.cleanup.push(() => this.canvas.removeEventListener("mousedown", click), () => window.removeEventListener("mousemove", move));
+    this.cleanup.push(
+      () => this.canvas.removeEventListener("mousedown", down),
+      () => this.canvas.removeEventListener("contextmenu", context),
+      () => window.removeEventListener("mousemove", move),
+    );
   }
 
   private bindTouch() {
@@ -169,14 +187,14 @@ export class InputManager {
     const light = (event: PointerEvent) => { event.preventDefault(); this.flashlightPressed = true; };
     const toggleRun = (event: PointerEvent) => {
       event.preventDefault();
-      this.sprintToggled = !this.sprintToggled;
-      if (this.sprintToggled) this.setCrouch(false);
+      this.touchSprint = !this.touchSprint;
+      if (this.touchSprint) this.touchCrouch = false;
       this.syncActionButtons();
     };
     const toggleCrouch = (event: PointerEvent) => {
       event.preventDefault();
-      this.setCrouch(!this.crouchToggled);
-      if (this.crouchToggled) this.sprintToggled = false;
+      this.touchCrouch = !this.touchCrouch;
+      if (this.touchCrouch) this.touchSprint = false;
       this.syncActionButtons();
     };
 
@@ -222,15 +240,11 @@ export class InputManager {
     );
   }
 
-  private setCrouch(active: boolean) {
-    this.crouchToggled = active;
-  }
-
   private syncActionButtons() {
     const runButton = this.ui?.querySelector<HTMLElement>("[data-run]");
     const crouchButton = this.ui?.querySelector<HTMLElement>("[data-crouch]");
-    runButton?.classList.toggle("active", this.sprintToggled);
-    crouchButton?.classList.toggle("active", this.crouchToggled);
+    runButton?.classList.toggle("active", this.touchSprint);
+    crouchButton?.classList.toggle("active", this.touchCrouch);
   }
 
   private resetContinuousState() {
@@ -239,8 +253,8 @@ export class InputManager {
     this.moveY = 0;
     this.movePointer = null;
     this.lookPointer = null;
-    this.sprintToggled = false;
-    this.crouchToggled = false;
+    this.touchSprint = false;
+    this.touchCrouch = false;
     this.lookX = 0;
     this.lookY = 0;
     const knob = this.ui?.querySelector<HTMLElement>(".joystick-knob");
