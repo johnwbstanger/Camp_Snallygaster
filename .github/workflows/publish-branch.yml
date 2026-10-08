@@ -29,7 +29,7 @@ jobs:
 
       - name: Build browser client
         env:
-          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-rebuild.onrender.com' }}
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-extraction--willstanger.replit.app' }}
         run: npm run build
 
       - name: Verify compiled output
@@ -38,6 +38,12 @@ jobs:
           grep -q "assets/" dist/client/index.html
           ! grep -q "/src/main.ts" dist/client/index.html
           ! grep -q "/src/style.css" dist/client/index.html
+
+      - name: Verify production backend health
+        env:
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-extraction--willstanger.replit.app' }}
+        run: |
+          node -e 'const base=process.env.VITE_SERVER_URL.replace(/\/$/,""); fetch(base+"/healthz", {signal: AbortSignal.timeout(20000)}).then(async r=>{if(!r.ok) throw new Error(`healthz ${r.status}`); const body=await r.json(); if(body.maxPlayers!==15) throw new Error(`maxPlayers ${body.maxPlayers}`); console.log("PUBLIC HEALTH PASS", body)}).catch(e=>{console.error(e); process.exit(1)})'
 
       - name: Publish compiled files to gh-pages branch
         env:
