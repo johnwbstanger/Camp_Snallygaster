@@ -3,7 +3,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 export type AssetKey =
-  | "camper"
+  | "camperMale"
+  | "camperFemale"
   | "counselor"
   | "cooler"
   | "canoe"
@@ -21,14 +22,19 @@ type AssetDefinition = {
 
 // Every external visual is documented in docs/ASSET_PROVENANCE.md and has a
 // local gameplay/collision fallback. Render assets never define gameplay physics.
+const QUATERNIUS_BASE = "https://raw.githubusercontent.com/dustinc555/mygame/f2cc1affbca335b74ee44ecbd765db4bd17f0f05/assets/vendor/quaternius/universal_base_characters/base_characters";
 const ASSETS: Record<AssetKey, AssetDefinition> = {
+  camperMale: {
+    url: `${QUATERNIUS_BASE}/Teen_Male_FullBody.gltf`,
+    targetHeight: 1.55,
+  },
+  camperFemale: {
+    url: `${QUATERNIUS_BASE}/Teen_Female_FullBody.gltf`,
+    targetHeight: 1.52,
+  },
   counselor: {
     url: "https://raw.githubusercontent.com/Hhk187/Zomopocalypse/main/Assets/Models/Characters/Ultimate%20Modular%20Men%20Pack-glb/Casual%20Character.glb",
     targetHeight: 1.78,
-  },
-  camper: {
-    url: "https://raw.githubusercontent.com/Hhk187/Zomopocalypse/main/Assets/Models/Characters/Ultimate%20Modular%20Men%20Pack-glb/Beach%20Character.glb",
-    targetHeight: 1.55,
   },
   cooler: {
     url: "https://cdn.3dassets.dev/assets/28560/v1/model.glb",
