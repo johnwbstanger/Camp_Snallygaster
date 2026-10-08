@@ -1,3 +1,5 @@
+import type { HidingPose } from "./hidingSpots";
+
 export type PlayerPose = {
   x: number;
   y: number;
@@ -11,12 +13,16 @@ export type PlayerState = {
   pose: PlayerPose;
 };
 
+export type CamperPhase = "HIDDEN" | "FOLLOWING" | "BOARDING" | "BOARDED";
+
 export type CamperState = {
   id: string;
   name: string;
-  state: "HIDDEN" | "FOLLOWING" | "SAFE";
+  state: CamperPhase;
   followingPlayerId: string | null;
   position: { x: number; y: number; z: number };
+  hidingSpotId: string;
+  hidingPose: HidingPose;
 };
 
 export type DoorState = {
