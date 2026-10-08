@@ -112,6 +112,7 @@ export function getMonsterDefinition(kind: MonsterKind): MonsterDefinition {
 }
 
 export function chooseRandomMonster(random: () => number = Math.random): MonsterDefinition {
-  const value = Number.isFinite(random()) ? Math.max(0, Math.min(0.999999, random())) : 0;
+  const sample = random();
+  const value = Number.isFinite(sample) ? Math.max(0, Math.min(0.999999, sample)) : 0;
   return MONSTER_LIBRARY[Math.floor(value * MONSTER_LIBRARY.length)] ?? MONSTER_LIBRARY[0];
 }
