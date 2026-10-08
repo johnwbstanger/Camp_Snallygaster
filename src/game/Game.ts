@@ -9,11 +9,11 @@ import { ObjectiveSystem } from "./ObjectiveSystem";
 import { PhysicalProps } from "./PhysicalProps";
 import { CampWorld } from "./World";
 
-// User-requested fun-speed profile: the old 10.35 max sprint is now normal movement,
-// and sprint is exactly 1.75x that value.
-const BASE_MOVEMENT_SPEED = 10.35;
+// User-requested fun-speed profile: the previous 18.1125 sprint is now normal
+// movement, and sprint remains exactly 1.75x normal movement.
+const BASE_MOVEMENT_SPEED = 18.1125;
 const SPRINT_MULTIPLIER = 1.75;
-const SPRINT_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * SPRINT_MULTIPLIER; // 18.1125
+const SPRINT_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * SPRINT_MULTIPLIER; // 31.696875
 const CROUCH_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * 0.5;
 const PLAYER_RADIUS = 0.38;
 
@@ -64,8 +64,6 @@ export class Game {
     this.physics.defaultContactMaterial.restitution = 0;
 
     this.world = new CampWorld(this.physics, this.mobile);
-    // This layer existed previously but was never attached to the scene. Keep it
-    // separate from gameplay collision so visual upgrades cannot change physics.
     addHighFidelitySetDressing(this.world.scene, this.mobile);
     this.objectives = new ObjectiveSystem(this.world.scene, this.mobile);
     this.props = new PhysicalProps(this.world.scene, this.physics, this.mobile);
@@ -245,7 +243,9 @@ export class Game {
     fallback.add(body, head);
     visual.add(fallback);
 
-    void assetLibrary.attach("counselor", visual, { name: "counselor-model" }).then((model) => {
+    const nameHash = [...name].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+    const counselorKey = nameHash % 2 === 0 ? "counselorMale" : "counselorFemale";
+    void assetLibrary.attach(counselorKey, visual, { name: "counselor-model" }).then((model) => {
       if (model) fallback.visible = false;
     });
     return group;
