@@ -1,4 +1,5 @@
 import "./style.css";
+import "./lobby.css";
 import type { SharedRoundState } from "../shared/protocol";
 import type { Game } from "./game/Game";
 import { MultiplayerClient, type RoomInfo } from "./networking/Multiplayer";
@@ -17,12 +18,20 @@ app.innerHTML = `
       <button id="playSolo" class="primary">ENTER CAMP SOLO</button>
       <div class="network-row"><button id="createCamp">CREATE CAMP</button><button id="showJoin">JOIN CAMP</button></div>
       <div id="joinRow" class="join-row hidden"><input id="roomCode" class="field" maxlength="8" placeholder="PINE-42" autocapitalize="characters" /><button id="joinCamp">JOIN</button></div>
-      <p id="status" class="status">Ready. The 3D camp loads only when you enter a round.</p>
+      <p id="status" class="status">Ready. Multiplayer camps support up to 15 counselors.</p>
     </section>
+
     <section id="lobby" class="menu-card lobby-card hidden" aria-label="Camp lobby">
-      <div class="eyebrow">CAMP RADIO CHANNEL</div><h2 id="roomTitle">CAMP ----</h2><div id="roster" class="roster"></div>
-      <button id="startCamp" class="primary hidden">START EVACUATION</button><p id="lobbyStatus" class="status">Waiting for counselors…</p>
+      <div class="eyebrow">CAMP RADIO CHANNEL</div>
+      <div class="lobby-heading-row">
+        <h2 id="roomTitle">CAMP ----</h2>
+        <div id="lobbyCount" class="lobby-count">0 / 15</div>
+      </div>
+      <div id="roster" class="roster lobby-roster"></div>
+      <button id="startCamp" class="primary hidden">START EVACUATION</button>
+      <p id="lobbyStatus" class="status">Waiting for counselors…</p>
     </section>
+
     <section id="gameViewport" class="game-viewport hidden" aria-label="Game viewport"></section>
     <button id="exitGame" class="exit hidden" type="button">MENU</button>
   </main>
@@ -42,6 +51,7 @@ const nameInput = document.querySelector<HTMLInputElement>("#playerName")!;
 const codeInput = document.querySelector<HTMLInputElement>("#roomCode")!;
 const startButton = document.querySelector<HTMLButtonElement>("#startCamp")!;
 const roomTitle = document.querySelector<HTMLElement>("#roomTitle")!;
+const lobbyCount = document.querySelector<HTMLElement>("#lobbyCount")!;
 const roster = document.querySelector<HTMLElement>("#roster")!;
 const exitButton = document.querySelector<HTMLButtonElement>("#exitGame")!;
 
@@ -51,13 +61,16 @@ let multiplayer: MultiplayerClient | null = null;
 let room: RoomInfo | null = null;
 let latestRound: SharedRoundState | null = null;
 
-function playerName() { return nameInput.value.trim().slice(0, 18) || "Counselor"; }
+function playerName() {
+  return nameInput.value.trim().slice(0, 18) || "Counselor";
+}
 
 async function launchGame(networked: boolean) {
   if (game || starting) return;
   starting = true;
   status.classList.remove("error");
   lobbyStatus.textContent = "Loading camp…";
+
   try {
     const { Game } = await import("./game/Game");
     game = new Game(viewport, networked);
@@ -66,6 +79,7 @@ async function launchGame(networked: boolean) {
     lobby.classList.add("hidden");
     viewport.classList.remove("hidden");
     exitButton.classList.remove("hidden");
+
     if (networked && multiplayer) {
       game.onPose((pose) => multiplayer?.sendPose(pose));
       game.onInteract(() => multiplayer?.interact());
@@ -80,55 +94,122 @@ async function launchGame(networked: boolean) {
     game?.destroy();
     game = null;
     menu.classList.remove("hidden");
-  } finally { starting = false; }
+  } finally {
+    starting = false;
+  }
 }
 
 function ensureMultiplayer() {
   if (multiplayer) return multiplayer;
+
   multiplayer = new MultiplayerClient();
-  multiplayer.onRoster((nextRoom) => { room = nextRoom; renderLobby(nextRoom); });
+  multiplayer.onRoster((nextRoom) => {
+    room = nextRoom;
+    renderLobby(nextRoom);
+  });
   multiplayer.onSnapshot((players) => game?.setRemotePlayers(players, room?.playerId ?? null));
-  multiplayer.onRound((state) => { latestRound = state; game?.setSharedRoundState(state); });
+  multiplayer.onRound((state) => {
+    latestRound = state;
+    game?.setSharedRoundState(state);
+  });
   multiplayer.onStart(() => void launchGame(true));
-  multiplayer.onError((message) => { status.textContent = message; lobbyStatus.textContent = message; });
+  multiplayer.onError((message) => {
+    status.textContent = message;
+    lobbyStatus.textContent = message;
+  });
   return multiplayer;
 }
 
 async function createCamp() {
-  setBusy(true, "Creating camp…");
-  try { room = await ensureMultiplayer().createCamp(playerName()); showLobby(room); }
-  catch (error) { status.textContent = error instanceof Error ? error.message : "Failed to create camp"; status.classList.add("error"); }
-  finally { setBusy(false); }
+  setBusy(true, "Waking multiplayer server and creating camp…");
+  status.classList.remove("error");
+  try {
+    room = await ensureMultiplayer().createCamp(playerName());
+    showLobby(room);
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Failed to create camp";
+    status.classList.add("error");
+  } finally {
+    setBusy(false);
+  }
 }
 
 async function joinCamp() {
   const code = codeInput.value.trim().toUpperCase();
   if (!code) return;
-  setBusy(true, "Joining camp…");
-  try { room = await ensureMultiplayer().joinCamp(code, playerName()); showLobby(room); }
-  catch (error) { status.textContent = error instanceof Error ? error.message : "Failed to join camp"; status.classList.add("error"); }
-  finally { setBusy(false); }
+
+  setBusy(true, "Waking multiplayer server and joining camp…");
+  status.classList.remove("error");
+  try {
+    room = await ensureMultiplayer().joinCamp(code, playerName());
+    showLobby(room);
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : "Failed to join camp";
+    status.classList.add("error");
+  } finally {
+    setBusy(false);
+  }
 }
 
-function showLobby(info: RoomInfo) { menu.classList.add("hidden"); lobby.classList.remove("hidden"); renderLobby(info); }
+function showLobby(info: RoomInfo) {
+  menu.classList.add("hidden");
+  lobby.classList.remove("hidden");
+  renderLobby(info);
+}
+
 function renderLobby(info: RoomInfo) {
   roomTitle.textContent = `CAMP ${info.roomCode}`;
-  roster.replaceChildren(...info.players.map((player) => {
-    const item = document.createElement("div"); item.className = "roster-item";
-    item.textContent = `${player.name}${player.id === info.hostId ? " • HOST" : ""}`; return item;
+  lobbyCount.textContent = `${info.players.length} / ${info.maxPlayers}`;
+  lobbyCount.classList.toggle("full", info.players.length >= info.maxPlayers);
+
+  roster.replaceChildren(...info.players.map((player, index) => {
+    const item = document.createElement("div");
+    item.className = "roster-item lobby-player";
+
+    const slot = document.createElement("span");
+    slot.className = "lobby-player-slot";
+    slot.textContent = String(index + 1).padStart(2, "0");
+
+    const name = document.createElement("span");
+    name.className = "lobby-player-name";
+    name.textContent = player.name;
+
+    const role = document.createElement("span");
+    role.className = "lobby-player-role";
+    role.textContent = player.id === info.hostId ? "HOST" : "COUNSELOR";
+
+    item.append(slot, name, role);
+    return item;
   }));
+
   const isHost = info.playerId === info.hostId;
   startButton.classList.toggle("hidden", !isHost);
-  lobbyStatus.textContent = isHost ? "Share the camp code, then start when everyone is ready." : "Waiting for the host to start…";
+  lobbyStatus.textContent = isHost
+    ? `${info.players.length} of ${info.maxPlayers} counselors connected. Share ${info.roomCode} and start when ready.`
+    : `${info.players.length} of ${info.maxPlayers} counselors connected. Waiting for the host.`;
 }
+
 function setBusy(busy: boolean, message = "") {
-  createButton.disabled = busy; joinButton.disabled = busy; showJoinButton.disabled = busy;
+  createButton.disabled = busy;
+  joinButton.disabled = busy;
+  showJoinButton.disabled = busy;
   if (message) status.textContent = message;
 }
+
 function exitToMenu() {
-  game?.destroy(); game = null; multiplayer?.close(); multiplayer = null; room = null; latestRound = null;
-  viewport.replaceChildren(); viewport.classList.add("hidden"); exitButton.classList.add("hidden"); lobby.classList.add("hidden"); menu.classList.remove("hidden");
-  status.classList.remove("error"); status.textContent = "Ready.";
+  game?.destroy();
+  game = null;
+  multiplayer?.close();
+  multiplayer = null;
+  room = null;
+  latestRound = null;
+  viewport.replaceChildren();
+  viewport.classList.add("hidden");
+  exitButton.classList.add("hidden");
+  lobby.classList.add("hidden");
+  menu.classList.remove("hidden");
+  status.classList.remove("error");
+  status.textContent = "Ready. Multiplayer camps support up to 15 counselors.";
 }
 
 playButton.addEventListener("click", () => void launchGame(false));
