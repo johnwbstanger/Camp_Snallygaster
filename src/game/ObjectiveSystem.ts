@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import type { SharedRoundState } from "../../shared/protocol";
+import type { SharedRoundState, DoorState } from "../../shared/protocol";
+import { hasCampLineOfSight, MONSTER_HOME } from "../../shared/campVision";
 import { assetLibrary } from "./AssetLibrary";
 import { addCampDetailKit } from "./CampDetailKit";
 
@@ -61,7 +62,6 @@ export class ObjectiveSystem {
 
     const found = this.campers.filter((camper) => camper.state !== "HIDDEN").length;
     const safe = this.campers.filter((camper) => camper.state === "SAFE").length;
-    this.monsterAwake = this.monsterAwake || found > 0;
     this.complete = safe === this.campers.length && this.campers.every((camper) => camper.boarded);
     this.updateBusDoor();
 
@@ -127,7 +127,6 @@ export class ObjectiveSystem {
     CAMPERS.forEach(([name, x, y, z], index) => {
       const root = new THREE.Group();
       root.position.set(x, y, z);
-      // Explicit requirement: campers are 50% of their previous rendered size.
       root.scale.setScalar(0.5);
 
       const visual = new THREE.Group();
@@ -152,7 +151,8 @@ export class ObjectiveSystem {
       this.campers.push(camper);
       this.camperById.set(camper.id, camper);
 
-      void assetLibrary.attach("camper", visual, { name: `camper-model-${index + 1}` }).then((model) => {
+      const characterKey = index % 2 === 0 ? "camperMale" : "camperFemale";
+      void assetLibrary.attach(characterKey, visual, { name: `camper-model-${index + 1}` }).then((model) => {
         if (!model) return;
         fallback.visible = false;
         model.traverse((object) => {
@@ -227,7 +227,7 @@ export class ObjectiveSystem {
     leftEye.position.set(-0.16, 2.53, 0.62);
     rightEye.position.set(0.16, 2.53, 0.62);
     this.monster.add(body, hood, leftEye, rightEye);
-    this.monster.position.set(-32, 0, -29);
+    this.monster.position.set(MONSTER_HOME.x, MONSTER_HOME.y, MONSTER_HOME.z);
     this.monster.visible = false;
     this.scene.add(this.monster);
   }
@@ -237,6 +237,7 @@ export class ObjectiveSystem {
     if (interactPressed && nearest && nearest.distance < 2.6) {
       nearest.camper.state = "FOLLOWING";
       this.monsterAwake = true;
+      this.monster.position.set(MONSTER_HOME.x, MONSTER_HOME.y, MONSTER_HOME.z);
     }
 
     const followers = this.campers.filter((camper) => camper.state === "FOLLOWING");
@@ -321,6 +322,15 @@ export class ObjectiveSystem {
   private updateLocalMonster(player: THREE.Vector3, dt: number) {
     this.monster.visible = this.monsterAwake;
     if (!this.monsterAwake) return;
+
+    const doors = this.localDoorStates();
+    if (!hasCampLineOfSight(this.monster.position, player, doors)) {
+      this.monsterAwake = false;
+      this.monster.visible = false;
+      this.monster.position.set(MONSTER_HOME.x, MONSTER_HOME.y, MONSTER_HOME.z);
+      return;
+    }
+
     const flatPlayer = new THREE.Vector3(player.x, 0, player.z);
     const delta = flatPlayer.clone().sub(this.monster.position);
     const distance = delta.length();
@@ -329,6 +339,18 @@ export class ObjectiveSystem {
     if (distance > 0.001) this.monster.position.add(delta.normalize().multiplyScalar(Math.min(distance, speed * dt)));
     this.monster.lookAt(player.x, 0, player.z);
     if (distance < 1.15) this.caught = true;
+  }
+
+  private localDoorStates(): DoorState[] {
+    const states: DoorState[] = [];
+    const seen = new Set<string>();
+    this.scene.traverse((object) => {
+      const id = object.userData.targetId;
+      if (typeof id !== "string" || !id.startsWith("door:") || seen.has(id)) return;
+      seen.add(id);
+      states.push({ id, open: object.userData.prompt === "CLOSE DOOR" });
+    });
+    return states;
   }
 
   private interactionPrompt(player: THREE.Vector3) {
