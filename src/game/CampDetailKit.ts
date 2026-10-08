@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { addHighFidelitySetDressing } from "./HighFidelitySetDressing";
 
 type CabinDetail = {
   x: number;
@@ -44,6 +45,7 @@ export function addCampDetailKit(scene: THREE.Scene, mobile: boolean) {
   addWoodPile(scene, -27.5, 7.5, bark, cutWood, mobile);
 
   addCampClutter(scene, fabric, darkTrim, mobile);
+  addHighFidelitySetDressing(scene, mobile);
 }
 
 function addCabinDetails(
