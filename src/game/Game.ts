@@ -6,6 +6,12 @@ import { ObjectiveSystem } from "./ObjectiveSystem";
 import { PhysicalProps } from "./PhysicalProps";
 import { CampWorld } from "./World";
 
+const LC_MOVEMENT_SPEED = 4.6;
+const LC_SPRINT_MULTIPLIER_MIN = 1.0;
+const LC_SPRINT_MULTIPLIER_MAX = 2.25;
+const LC_SPRINT_INCREASE_RATE = 1.0;
+const LC_SPRINT_DECREASE_RATE = 10.0;
+
 export class Game {
   private renderer!: THREE.WebGLRenderer;
   private camera!: THREE.PerspectiveCamera;
@@ -18,6 +24,7 @@ export class Game {
   private flashlight!: THREE.SpotLight;
   private flashlightTarget!: THREE.Object3D;
   private flashlightOn = false;
+  private sprintMultiplier = LC_SPRINT_MULTIPLIER_MIN;
   private frameId = 0;
   private running = false;
   private roundEnded = false;
@@ -77,7 +84,7 @@ export class Game {
         <div id="objectiveText" class="hud-objective">CAMPERS SAFE 0 / 7</div>
         <div id="threatText" class="hud-threat">THE WOODS ARE QUIET</div>
       </div>
-      <div class="control-help">WASD MOVE · SHIFT RUN · C/CTRL CROUCH · E / CLICK USE · F LIGHT</div>
+      <div class="control-help">WASD MOVE · HOLD SHIFT SPRINT · CTRL CROUCH · SPACE JUMP · E INTERACT · LMB USE · G DROP · RMB SCAN</div>
       <div id="promptText" class="game-prompt"></div>
       <div class="crosshair"></div>
       <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p></div></div>
@@ -176,7 +183,9 @@ export class Game {
       mass: 70,
       shape: new CANNON.Sphere(0.5),
       material: playerMaterial,
-      linearDamping: 0.78,
+      // Horizontal speed is authored explicitly each frame. Damping here would
+      // make the verified Lethal Company target speeds read slower in Cannon.
+      linearDamping: 0,
       angularDamping: 1,
       fixedRotation: true,
     });
@@ -222,16 +231,37 @@ export class Game {
     this.yaw -= input.lookX * lookScale;
     this.pitch = THREE.MathUtils.clamp(this.pitch - input.lookY * lookScale, -1.15, 1.05);
 
-    const moving = Math.abs(input.forward) > 0.08 || Math.abs(input.right) > 0.08;
-    const sprinting = input.sprint && moving;
-    const speed = input.crouch ? 3.4 : sprinting ? 9.4 : 6.2;
+    let forwardInput = input.forward;
+    let rightInput = input.right;
+    const inputMagnitude = Math.hypot(forwardInput, rightInput);
+    if (inputMagnitude > 1) {
+      forwardInput /= inputMagnitude;
+      rightInput /= inputMagnitude;
+    }
+
+    const moving = inputMagnitude > 0.08;
+    const sprinting = input.sprint && moving && !input.crouch;
+    if (sprinting) {
+      this.sprintMultiplier = Math.min(
+        LC_SPRINT_MULTIPLIER_MAX,
+        this.sprintMultiplier + LC_SPRINT_INCREASE_RATE * dt,
+      );
+    } else {
+      this.sprintMultiplier = Math.max(
+        LC_SPRINT_MULTIPLIER_MIN,
+        this.sprintMultiplier - LC_SPRINT_DECREASE_RATE * dt,
+      );
+    }
+
+    const speed = LC_MOVEMENT_SPEED * this.sprintMultiplier;
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
-    const vx = (input.right * cos - input.forward * sin) * speed;
-    const vz = (-input.right * sin - input.forward * cos) * speed;
-    const responsiveness = Math.min(1, dt * (input.crouch ? 14 : 18));
-    this.player.velocity.x += (vx - this.player.velocity.x) * responsiveness;
-    this.player.velocity.z += (vz - this.player.velocity.z) * responsiveness;
+    // THREE cameras face -Z at yaw 0. These basis equations therefore make
+    // +forward (W) camera-forward for every yaw, with no input-side inversion.
+    const vx = (rightInput * cos - forwardInput * sin) * speed;
+    const vz = (-rightInput * sin - forwardInput * cos) * speed;
+    this.player.velocity.x = vx;
+    this.player.velocity.z = vz;
 
     if (input.flashlightPressed) this.flashlightOn = !this.flashlightOn;
 
@@ -246,6 +276,7 @@ export class Game {
     if (p.y < -10) {
       this.player.position.set(this.respawnPose.x, this.respawnPose.y, this.respawnPose.z);
       this.player.velocity.setZero();
+      this.sprintMultiplier = LC_SPRINT_MULTIPLIER_MIN;
     }
 
     this.camera.position.set(p.x, p.y + eyeHeight, p.z);
@@ -264,6 +295,8 @@ export class Game {
     } else if (this.networked && input.interactPressed) {
       this.interactListener?.();
     }
+
+    if (input.dropPressed) this.props.dropHeld();
 
     const playerPosition = new THREE.Vector3(p.x, p.y, p.z);
     const objective = this.networked
@@ -302,7 +335,7 @@ export class Game {
     const prompt = this.props.isProp(this.interactionTargetId)
       ? this.props.promptFor(this.interactionTargetId)
       : String(hit.object.userData.prompt || "INTERACT");
-    this.interactionPrompt = `E / CLICK · ${prompt}`;
+    this.interactionPrompt = `E · ${prompt}`;
   }
 
   private updateFlashlight() {
