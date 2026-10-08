@@ -39,12 +39,17 @@ export class PhysicalProps {
 
   toggleHold(id: string) {
     if (!this.props.has(id)) return false;
-    if (this.heldId === id) {
-      this.heldId = null;
-      return true;
-    }
+    if (this.heldId === id) return this.dropHeld();
     this.heldId = id;
     this.props.get(id)?.body.wakeUp();
+    return true;
+  }
+
+  dropHeld() {
+    if (!this.heldId) return false;
+    const held = this.props.get(this.heldId);
+    this.heldId = null;
+    held?.body.wakeUp();
     return true;
   }
 
