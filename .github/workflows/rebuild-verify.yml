@@ -20,5 +20,7 @@ jobs:
       - run: npm run build
       - name: Verify production entry exists
         run: test -f dist/client/index.html && grep -q "assets/" dist/client/index.html
-      - name: Verify create, join, roster, start, and movement sync
+      - name: Verify cross-play room, movement, rescue, and threat sync
         run: npm run smoke:multiplayer
+      - name: Verify production HTTP assets and WebSocket endpoint
+        run: npm run smoke:production
