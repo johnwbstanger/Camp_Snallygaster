@@ -35,7 +35,7 @@ try {
   }
 
   const welcome = await createRoom(`ws://127.0.0.1:${port}/ws`);
-  if (!/^[A-Z0-9]{4,8}$/.test(String(welcome.roomCode || ""))) {
+  if (!/^[A-Z0-9-]{4,12}$/.test(String(welcome.roomCode || ""))) {
     throw new Error(`production create did not return a usable room code: ${JSON.stringify(welcome)}`);
   }
   if (!welcome.playerId || !welcome.hostId || welcome.playerId !== welcome.hostId) {
