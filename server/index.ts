@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import type { CamperState, ClientMessage, DoorState, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "../shared/protocol.js";
 import { hasCampLineOfSight, MONSTER_HOME } from "../shared/campVision.js";
+import { chooseRandomMonster, getMonsterDefinition } from "../shared/monsterLibrary.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,6 +155,7 @@ function createRoom(): Room {
 }
 
 function createRoundState(phase: SharedRoundState["phase"]): SharedRoundState {
+  const selectedMonster = chooseRandomMonster();
   return {
     phase,
     campers: CAMPERS.map(([name, x, y, z], index): CamperState => ({
@@ -164,7 +166,13 @@ function createRoundState(phase: SharedRoundState["phase"]): SharedRoundState {
       position: { x, y, z },
     })),
     doors: DOORS.map(({ id }): DoorState => ({ id, open: false })),
-    monster: { x: MONSTER_HOME.x, y: MONSTER_HOME.y, z: MONSTER_HOME.z, awake: false },
+    monster: {
+      kind: selectedMonster.id,
+      x: MONSTER_HOME.x,
+      y: MONSTER_HOME.y,
+      z: MONSTER_HOME.z,
+      awake: false,
+    },
     campersSafe: 0,
     campersFound: 0,
   };
@@ -262,9 +270,11 @@ function updateRound(room: Room, dt: number) {
     if (!target) {
       disengageMonster(room);
     } else {
+      const monsterDefinition = getMonsterDefinition(room.round.monster.kind);
       const bestDistance = distance2D(target.pose, room.round.monster);
-      moveToward(room.round.monster, target.pose.x, target.pose.z, (1.55 + room.round.campersFound * 0.12) * dt);
-      if (bestDistance < 1.15) room.round.phase = "LOST";
+      const speed = monsterDefinition.baseSpeed + room.round.campersFound * monsterDefinition.speedPerCamper;
+      moveToward(room.round.monster, target.pose.x, target.pose.z, speed * dt);
+      if (bestDistance < monsterDefinition.catchDistance) room.round.phase = "LOST";
     }
   }
   broadcastRound(room);
