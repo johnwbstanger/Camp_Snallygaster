@@ -45,7 +45,7 @@ export class Game {
     this.physics = new CANNON.World({ gravity: new CANNON.Vec3(0, -18, 0) });
     this.physics.allowSleep = true;
     this.physics.broadphase = new CANNON.SAPBroadphase(this.physics);
-    this.physics.solver.iterations = this.mobile ? 8 : 10;
+    (this.physics.solver as CANNON.GSSolver).iterations = this.mobile ? 8 : 10;
     this.physics.defaultContactMaterial.friction = 0.28;
     this.physics.defaultContactMaterial.restitution = 0;
 
