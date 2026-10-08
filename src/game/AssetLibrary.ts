@@ -8,7 +8,9 @@ export type AssetKey =
   | "cooler"
   | "canoe"
   | "cabin"
-  | "bus";
+  | "bus"
+  | "tree"
+  | "cartons";
 
 type AssetDefinition = {
   url: string;
@@ -17,8 +19,8 @@ type AssetDefinition = {
   rotateY?: number;
 };
 
-// These URLs are intentionally centralized. Every external model used here is
-// redistributable/permissive and documented in docs/ASSET_PROVENANCE.md.
+// Every external visual is documented in docs/ASSET_PROVENANCE.md and has a
+// local gameplay/collision fallback. Render assets never define gameplay physics.
 const ASSETS: Record<AssetKey, AssetDefinition> = {
   counselor: {
     url: "https://raw.githubusercontent.com/Hhk187/Zomopocalypse/main/Assets/Models/Characters/Ultimate%20Modular%20Men%20Pack-glb/Casual%20Character.glb",
@@ -44,6 +46,14 @@ const ASSETS: Record<AssetKey, AssetDefinition> = {
     url: "https://cdn.3dassets.dev/assets/34194/v1/model.glb",
     targetLongestSide: 9.0,
     rotateY: Math.PI / 2,
+  },
+  tree: {
+    url: "https://cdn.3dassets.dev/assets/32685/v1/model.glb",
+    targetHeight: 7.2,
+  },
+  cartons: {
+    url: "https://cdn.3dassets.dev/assets/34800/v1/model.glb",
+    targetHeight: 0.92,
   },
 };
 
