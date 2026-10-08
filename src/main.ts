@@ -33,7 +33,30 @@ app.innerHTML = `
     </section>
 
     <section id="gameViewport" class="game-viewport hidden" aria-label="Game viewport"></section>
-    <button id="exitGame" class="exit hidden" type="button">MENU</button>
+    <button id="gameMenuToggle" class="exit hidden" type="button" aria-label="Open game menu">☰ MENU</button>
+
+    <section id="pauseMenu" class="pause-overlay hidden" aria-label="Game menu">
+      <div class="pause-card">
+        <div class="eyebrow">CAMP COUNSELOR MENU</div>
+        <h2>PAUSED</h2>
+        <button id="resumeGame" class="primary">RETURN TO CAMP</button>
+        <button id="toggleBindings">KEY BINDINGS</button>
+        <div id="bindingsPanel" class="bindings-panel hidden">
+          <div><kbd>W A S D</kbd><span>Move</span></div>
+          <div><kbd>SHIFT</kbd><span>Hold to sprint</span></div>
+          <div><kbd>CTRL</kbd><span>Crouch</span></div>
+          <div><kbd>SPACE</kbd><span>Jump</span></div>
+          <div><kbd>E</kbd><span>Interact / pick up / open</span></div>
+          <div><kbd>LMB</kbd><span>Use held item</span></div>
+          <div><kbd>G</kbd><span>Drop held item</span></div>
+          <div><kbd>RMB</kbd><span>Scan</span></div>
+          <div><kbd>F</kbd><span>Flashlight</span></div>
+          <div><kbd>ESC</kbd><span>Open / close this menu</span></div>
+          <p>Touch devices use the left movement stick, right look area, and on-screen action controls.</p>
+        </div>
+        <button id="returnMain" class="danger-action">RETURN TO MAIN MENU</button>
+      </div>
+    </section>
   </main>
 `;
 
@@ -53,13 +76,19 @@ const startButton = document.querySelector<HTMLButtonElement>("#startCamp")!;
 const roomTitle = document.querySelector<HTMLElement>("#roomTitle")!;
 const lobbyCount = document.querySelector<HTMLElement>("#lobbyCount")!;
 const roster = document.querySelector<HTMLElement>("#roster")!;
-const exitButton = document.querySelector<HTMLButtonElement>("#exitGame")!;
+const gameMenuToggle = document.querySelector<HTMLButtonElement>("#gameMenuToggle")!;
+const pauseMenu = document.querySelector<HTMLElement>("#pauseMenu")!;
+const resumeButton = document.querySelector<HTMLButtonElement>("#resumeGame")!;
+const toggleBindingsButton = document.querySelector<HTMLButtonElement>("#toggleBindings")!;
+const bindingsPanel = document.querySelector<HTMLElement>("#bindingsPanel")!;
+const returnMainButton = document.querySelector<HTMLButtonElement>("#returnMain")!;
 
 let game: Game | null = null;
 let starting = false;
 let multiplayer: MultiplayerClient | null = null;
 let room: RoomInfo | null = null;
 let latestRound: SharedRoundState | null = null;
+let paused = false;
 
 function playerName() {
   return nameInput.value.trim().slice(0, 18) || "Counselor";
@@ -88,7 +117,9 @@ async function launchGame(networked: boolean) {
     menu.classList.add("hidden");
     lobby.classList.add("hidden");
     viewport.classList.remove("hidden");
-    exitButton.classList.remove("hidden");
+    gameMenuToggle.classList.remove("hidden");
+    paused = false;
+    pauseMenu.classList.add("hidden");
     game.resume();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -142,7 +173,6 @@ async function createCamp() {
 async function joinCamp() {
   const code = codeInput.value.trim().toUpperCase();
   if (!code) return;
-
   setBusy(true, "Waking multiplayer server and joining camp…");
   status.classList.remove("error");
   try {
@@ -166,23 +196,18 @@ function renderLobby(info: RoomInfo) {
   roomTitle.textContent = `CAMP ${info.roomCode}`;
   lobbyCount.textContent = `${info.players.length} / ${info.maxPlayers}`;
   lobbyCount.classList.toggle("full", info.players.length >= info.maxPlayers);
-
   roster.replaceChildren(...info.players.map((player, index) => {
     const item = document.createElement("div");
     item.className = "roster-item lobby-player";
-
     const slot = document.createElement("span");
     slot.className = "lobby-player-slot";
     slot.textContent = String(index + 1).padStart(2, "0");
-
     const name = document.createElement("span");
     name.className = "lobby-player-name";
     name.textContent = player.name;
-
     const role = document.createElement("span");
     role.className = "lobby-player-role";
     role.textContent = player.id === info.hostId ? "HOST" : "COUNSELOR";
-
     item.append(slot, name, role);
     return item;
   }));
@@ -201,7 +226,23 @@ function setBusy(busy: boolean, message = "") {
   if (message) status.textContent = message;
 }
 
+function setPaused(next: boolean) {
+  if (!game) return;
+  paused = next;
+  pauseMenu.classList.toggle("hidden", !paused);
+  if (paused) {
+    game.pause();
+    document.exitPointerLock?.();
+  } else {
+    bindingsPanel.classList.add("hidden");
+    game.resume();
+  }
+}
+
 function exitToMenu() {
+  paused = false;
+  pauseMenu.classList.add("hidden");
+  bindingsPanel.classList.add("hidden");
   game?.destroy();
   game = null;
   multiplayer?.close();
@@ -210,7 +251,7 @@ function exitToMenu() {
   latestRound = null;
   viewport.replaceChildren();
   viewport.classList.add("hidden");
-  exitButton.classList.add("hidden");
+  gameMenuToggle.classList.add("hidden");
   lobby.classList.add("hidden");
   menu.classList.remove("hidden");
   status.classList.remove("error");
@@ -222,7 +263,15 @@ createButton.addEventListener("click", () => void createCamp());
 showJoinButton.addEventListener("click", () => joinRow.classList.toggle("hidden"));
 joinButton.addEventListener("click", () => void joinCamp());
 startButton.addEventListener("click", () => multiplayer?.startCamp());
-exitButton.addEventListener("click", exitToMenu);
+gameMenuToggle.addEventListener("click", () => setPaused(true));
+resumeButton.addEventListener("click", () => setPaused(false));
+toggleBindingsButton.addEventListener("click", () => bindingsPanel.classList.toggle("hidden"));
+returnMainButton.addEventListener("click", exitToMenu);
 codeInput.addEventListener("input", () => { codeInput.value = codeInput.value.toUpperCase(); });
+window.addEventListener("keydown", (event) => {
+  if (event.code !== "Escape" || !game) return;
+  event.preventDefault();
+  setPaused(!paused);
+});
 window.addEventListener("error", (event) => console.error("Unhandled browser error", event.error ?? event.message));
 window.addEventListener("unhandledrejection", (event) => console.error("Unhandled promise rejection", event.reason));
