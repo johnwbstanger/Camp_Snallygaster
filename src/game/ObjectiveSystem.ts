@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { SharedRoundState } from "../../shared/protocol";
 
 export type ObjectiveStatus = {
   found: number;
@@ -15,7 +16,6 @@ type Camper = {
   name: string;
   mesh: THREE.Group;
   state: "HIDDEN" | "FOLLOWING" | "SAFE";
-  followSlot: number;
 };
 
 const CAMPERS = [
@@ -30,6 +30,7 @@ const CAMPERS = [
 
 export class ObjectiveSystem {
   private campers: Camper[] = [];
+  private camperById = new Map<string, Camper>();
   private monster = new THREE.Group();
   private monsterAwake = false;
   private caught = false;
@@ -40,10 +41,10 @@ export class ObjectiveSystem {
     this.createMonster();
   }
 
-  update(player: THREE.Vector3, interactPressed: boolean, dt: number): ObjectiveStatus {
+  updateLocal(player: THREE.Vector3, interactPressed: boolean, dt: number): ObjectiveStatus {
     if (!this.caught && !this.complete) {
-      this.updateCampers(player, interactPressed, dt);
-      this.updateMonster(player, dt);
+      this.updateLocalCampers(player, interactPressed, dt);
+      this.updateLocalMonster(player, dt);
     }
 
     const found = this.campers.filter((camper) => camper.state !== "HIDDEN").length;
@@ -51,17 +52,43 @@ export class ObjectiveSystem {
     this.monsterAwake = this.monsterAwake || found > 0;
     this.complete = safe === this.campers.length;
 
-    const nearest = this.nearestHidden(player);
-    const prompt = nearest && nearest.distance < 2.6 ? `E / USE · CALL TO ${nearest.camper.name.toUpperCase()}` : "";
-
     return {
       found,
       safe,
       total: this.campers.length,
-      prompt,
+      prompt: this.interactionPrompt(player),
       monsterAwake: this.monsterAwake,
       caught: this.caught,
       complete: this.complete,
+    };
+  }
+
+  updateShared(player: THREE.Vector3, state: SharedRoundState | null): ObjectiveStatus {
+    if (!state) {
+      return { found: 0, safe: 0, total: this.campers.length, prompt: "", monsterAwake: false, caught: false, complete: false };
+    }
+
+    for (const sharedCamper of state.campers) {
+      const camper = this.camperById.get(sharedCamper.id);
+      if (!camper) continue;
+      camper.state = sharedCamper.state;
+      camper.mesh.position.lerp(new THREE.Vector3(sharedCamper.position.x, sharedCamper.position.y, sharedCamper.position.z), 0.65);
+      camper.mesh.visible = true;
+    }
+
+    this.monsterAwake = state.monster.awake;
+    this.monster.visible = state.monster.awake;
+    this.monster.position.lerp(new THREE.Vector3(state.monster.x, state.monster.y, state.monster.z), 0.58);
+    if (state.monster.awake) this.monster.lookAt(player.x, this.monster.position.y, player.z);
+
+    return {
+      found: state.campersFound,
+      safe: state.campersSafe,
+      total: state.campers.length,
+      prompt: this.interactionPrompt(player),
+      monsterAwake: state.monster.awake,
+      caught: state.phase === "LOST",
+      complete: state.phase === "WON",
     };
   }
 
@@ -87,7 +114,9 @@ export class ObjectiveSystem {
       group.position.set(x, y, z);
       group.scale.setScalar(this.mobile ? 0.95 : 1);
       this.scene.add(group);
-      this.campers.push({ id: `camper-${index + 1}`, name, mesh: group, state: "HIDDEN", followSlot: index });
+      const camper: Camper = { id: `camper-${index + 1}`, name, mesh: group, state: "HIDDEN" };
+      this.campers.push(camper);
+      this.camperById.set(camper.id, camper);
     });
   }
 
@@ -114,7 +143,7 @@ export class ObjectiveSystem {
     this.scene.add(this.monster);
   }
 
-  private updateCampers(player: THREE.Vector3, interactPressed: boolean, dt: number) {
+  private updateLocalCampers(player: THREE.Vector3, interactPressed: boolean, dt: number) {
     const nearest = this.nearestHidden(player);
     if (interactPressed && nearest && nearest.distance < 2.6) {
       nearest.camper.state = "FOLLOWING";
@@ -142,7 +171,7 @@ export class ObjectiveSystem {
     });
   }
 
-  private updateMonster(player: THREE.Vector3, dt: number) {
+  private updateLocalMonster(player: THREE.Vector3, dt: number) {
     this.monster.visible = this.monsterAwake;
     if (!this.monsterAwake) return;
 
@@ -154,6 +183,11 @@ export class ObjectiveSystem {
     if (distance > 0.001) this.monster.position.add(delta.normalize().multiplyScalar(Math.min(distance, speed * dt)));
     this.monster.lookAt(player.x, 0, player.z);
     if (distance < 1.15) this.caught = true;
+  }
+
+  private interactionPrompt(player: THREE.Vector3) {
+    const nearest = this.nearestHidden(player);
+    return nearest && nearest.distance < 2.6 ? `E / USE · CALL TO ${nearest.camper.name.toUpperCase()}` : "";
   }
 
   private nearestHidden(player: THREE.Vector3) {
