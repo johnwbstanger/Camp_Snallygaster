@@ -3,6 +3,7 @@ import * as CANNON from "cannon-es";
 import type { PlayerPose, PlayerState, SharedRoundState } from "../../shared/protocol";
 import { InputManager } from "./Input";
 import { ObjectiveSystem } from "./ObjectiveSystem";
+import { PhysicalProps } from "./PhysicalProps";
 import { CampWorld } from "./World";
 
 export class Game {
@@ -13,6 +14,7 @@ export class Game {
   private input!: InputManager;
   private world!: CampWorld;
   private objectives!: ObjectiveSystem;
+  private props!: PhysicalProps;
   private flashlight!: THREE.SpotLight;
   private flashlightTarget!: THREE.Object3D;
   private flashlightOn = false;
@@ -52,6 +54,7 @@ export class Game {
 
     this.world = new CampWorld(this.physics, this.mobile);
     this.objectives = new ObjectiveSystem(this.world.scene, this.mobile);
+    this.props = new PhysicalProps(this.world.scene, this.physics, this.mobile);
     this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 180);
     this.camera.rotation.order = "YXZ";
 
@@ -232,25 +235,32 @@ export class Game {
 
     if (input.flashlightPressed) this.flashlightOn = !this.flashlightOn;
 
-    this.physics.step(1 / 60, dt, 3);
     const p = this.player.position;
+    const eyeHeight = input.crouch ? 1.0 : 1.62;
+    this.camera.position.set(p.x, p.y + eyeHeight, p.z);
+    this.camera.rotation.y = this.yaw;
+    this.camera.rotation.x = this.pitch;
+    this.props.update(this.camera, dt);
+    this.physics.step(1 / 60, dt, 3);
+
     if (p.y < -10) {
       this.player.position.set(this.respawnPose.x, this.respawnPose.y, this.respawnPose.z);
       this.player.velocity.setZero();
     }
 
-    const eyeHeight = input.crouch ? 1.0 : 1.62;
     this.camera.position.set(p.x, p.y + eyeHeight, p.z);
-    this.camera.rotation.y = this.yaw;
-    this.camera.rotation.x = this.pitch;
     this.updateFlashlight();
     this.updateInteraction();
 
     let usedWorldInteraction = false;
     if (input.interactPressed && this.interactionTargetId) {
-      usedWorldInteraction = true;
-      if (this.networked) this.interactListener?.(this.interactionTargetId);
-      else this.world.toggleLocalDoor(this.interactionTargetId);
+      if (this.props.isProp(this.interactionTargetId)) {
+        usedWorldInteraction = this.props.toggleHold(this.interactionTargetId);
+      } else {
+        usedWorldInteraction = true;
+        if (this.networked) this.interactListener?.(this.interactionTargetId);
+        else this.world.toggleLocalDoor(this.interactionTargetId);
+      }
     } else if (this.networked && input.interactPressed) {
       this.interactListener?.();
     }
@@ -279,16 +289,20 @@ export class Game {
   private updateInteraction() {
     this.interactionTargetId = null;
     this.interactionPrompt = "";
-    if (this.world.interactables.length === 0) return;
+    const candidates = [...this.world.interactables, ...this.props.interactables];
+    if (candidates.length === 0) return;
 
     this.interactionRay.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     const hit = this.interactionRay
-      .intersectObjects(this.world.interactables, true)
+      .intersectObjects(candidates, true)
       .find((candidate) => candidate.distance <= 3.25 && candidate.object.userData.targetId);
 
     if (!hit) return;
     this.interactionTargetId = String(hit.object.userData.targetId);
-    this.interactionPrompt = `E / CLICK · ${String(hit.object.userData.prompt || "INTERACT")}`;
+    const prompt = this.props.isProp(this.interactionTargetId)
+      ? this.props.promptFor(this.interactionTargetId)
+      : String(hit.object.userData.prompt || "INTERACT");
+    this.interactionPrompt = `E / CLICK · ${prompt}`;
   }
 
   private updateFlashlight() {
