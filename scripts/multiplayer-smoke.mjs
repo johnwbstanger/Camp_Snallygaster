@@ -103,8 +103,14 @@ try {
 
   const finalRoster = await finalRosterPromise;
   if (finalRoster.players.length !== MAX_PLAYERS) throw new Error("15-player roster did not synchronize");
+
   const uniqueIds = new Set(finalRoster.players.map((player) => player.id));
   if (uniqueIds.size !== MAX_PLAYERS) throw new Error("15-player roster contains duplicate player IDs");
+
+  const uniqueSpawnCells = new Set(
+    finalRoster.players.map((player) => `${player.pose.x.toFixed(3)}:${player.pose.z.toFixed(3)}`),
+  );
+  if (uniqueSpawnCells.size !== MAX_PLAYERS) throw new Error("multiplayer players were assigned overlapping spawn positions");
 
   overflowClient = await openClient();
   const fullErrorPromise = nextMessage(
@@ -144,7 +150,7 @@ try {
   await sharedRescuePromise;
 
   console.log(
-    `MULTIPLAYER SMOKE PASS: ${hostWelcome.roomCode}, ${MAX_PLAYERS}/${MAX_PLAYERS} clients, overflow rejection, start, movement, rescue, and threat sync verified`,
+    `MULTIPLAYER SMOKE PASS: ${hostWelcome.roomCode}, ${MAX_PLAYERS}/${MAX_PLAYERS} clients, unique spawns, overflow rejection, start, movement, rescue, and threat sync verified`,
   );
 } finally {
   try { overflowClient?.close(); } catch {}
