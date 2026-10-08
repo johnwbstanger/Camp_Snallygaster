@@ -2,6 +2,7 @@ import * as THREE from "three";
 import * as CANNON from "cannon-es";
 import type { PlayerPose, PlayerState } from "../../shared/protocol";
 import { InputManager } from "./Input";
+import { ObjectiveSystem } from "./ObjectiveSystem";
 import { CampWorld } from "./World";
 
 export class Game {
@@ -11,8 +12,15 @@ export class Game {
   private player!: CANNON.Body;
   private input!: InputManager;
   private world!: CampWorld;
+  private objectives!: ObjectiveSystem;
+  private flashlight!: THREE.SpotLight;
+  private flashlightTarget!: THREE.Object3D;
+  private flashlightOn = false;
+  private battery = 1;
+  private stamina = 1;
   private frameId = 0;
   private running = false;
+  private roundEnded = false;
   private lastTime = 0;
   private yaw = Math.PI;
   private pitch = -0.08;
@@ -32,6 +40,7 @@ export class Game {
     this.physics.broadphase = new CANNON.SAPBroadphase(this.physics);
 
     this.world = new CampWorld(this.physics, this.mobile);
+    this.objectives = new ObjectiveSystem(this.world.scene, this.mobile);
     this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 180);
     this.camera.rotation.order = "YXZ";
 
@@ -47,11 +56,25 @@ export class Game {
 
     const hud = document.createElement("div");
     hud.className = "hud";
-    hud.innerHTML = `<div class="hud-card">WASD / LEFT THUMB · LOOK / RIGHT THUMB<br/>Get your bearings at Camp Snallygaster.</div><div class="crosshair"></div>`;
+    hud.innerHTML = `
+      <div class="hud-card mission-card">
+        <div class="hud-kicker">CAMP SNALLYGASTER • 1993</div>
+        <div id="objectiveText" class="hud-objective">CAMPERS SAFE 0 / 7</div>
+        <div id="threatText" class="hud-threat">THE WOODS ARE QUIET</div>
+      </div>
+      <div id="promptText" class="game-prompt"></div>
+      <div class="meters">
+        <div><span>STAMINA</span><div class="meter"><i id="staminaFill"></i></div></div>
+        <div><span>FLASHLIGHT</span><div class="meter"><i id="batteryFill"></i></div></div>
+      </div>
+      <div class="crosshair"></div>
+      <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p></div></div>
+    `;
     this.mount.appendChild(hud);
 
     this.input = new InputManager(this.renderer.domElement);
     this.createPlayer();
+    this.createFlashlight();
     this.resize();
     window.addEventListener("resize", this.resizeHandler, { passive: true });
 
@@ -100,6 +123,7 @@ export class Game {
     cancelAnimationFrame(this.frameId);
     window.removeEventListener("resize", this.resizeHandler);
     this.input?.destroy();
+    this.objectives?.destroy();
     this.renderer?.dispose();
     this.remotePlayers.clear();
     document.exitPointerLock?.();
@@ -115,6 +139,15 @@ export class Game {
     this.player.position.set(0, 1.4, 27);
     this.player.allowSleep = false;
     this.physics.addBody(this.player);
+  }
+
+  private createFlashlight() {
+    this.flashlight = new THREE.SpotLight(0xfff0c7, this.mobile ? 12 : 18, 30, Math.PI / 7.5, 0.42, 1.3);
+    this.flashlight.visible = false;
+    this.flashlight.castShadow = !this.mobile;
+    this.flashlightTarget = new THREE.Object3D();
+    this.world.scene.add(this.flashlight, this.flashlightTarget);
+    this.flashlight.target = this.flashlightTarget;
   }
 
   private createRemoteAvatar(name: string) {
@@ -144,7 +177,10 @@ export class Game {
     this.yaw -= input.lookX * lookScale;
     this.pitch = THREE.MathUtils.clamp(this.pitch - input.lookY * lookScale, -1.15, 1.05);
 
-    const speed = input.sprint ? 7.2 : 4.6;
+    const moving = Math.abs(input.forward) > 0.08 || Math.abs(input.right) > 0.08;
+    const sprinting = input.sprint && moving && this.stamina > 0.04;
+    this.stamina = THREE.MathUtils.clamp(this.stamina + (sprinting ? -0.22 : 0.14) * dt, 0, 1);
+    const speed = sprinting ? 7.2 : 4.6;
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
     const vx = (input.right * cos + input.forward * sin) * speed;
@@ -152,6 +188,10 @@ export class Game {
     const responsiveness = Math.min(1, dt * 12);
     this.player.velocity.x += (vx - this.player.velocity.x) * responsiveness;
     this.player.velocity.z += (vz - this.player.velocity.z) * responsiveness;
+
+    if (input.flashlightPressed && this.battery > 0.01) this.flashlightOn = !this.flashlightOn;
+    if (this.flashlightOn) this.battery = Math.max(0, this.battery - dt * 0.009);
+    if (this.battery <= 0) this.flashlightOn = false;
 
     this.physics.step(1 / 60, dt, 3);
 
@@ -164,6 +204,15 @@ export class Game {
     this.camera.position.set(p.x, p.y + 1.05, p.z);
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
+    this.updateFlashlight();
+
+    const playerPosition = new THREE.Vector3(p.x, p.y, p.z);
+    const objective = this.objectives.update(playerPosition, input.interactPressed, dt);
+    this.updateHud(objective.safe, objective.total, objective.prompt, objective.monsterAwake);
+    if (!this.roundEnded && (objective.complete || objective.caught)) {
+      this.roundEnded = true;
+      this.showRoundEnd(objective.complete);
+    }
 
     if (this.poseListener && now - this.lastPoseEmit >= 80) {
       this.lastPoseEmit = now;
@@ -172,6 +221,37 @@ export class Game {
 
     this.renderer.render(this.world.scene, this.camera);
     this.frameId = requestAnimationFrame((time) => this.loop(time));
+  }
+
+  private updateFlashlight() {
+    this.flashlight.visible = this.flashlightOn;
+    this.flashlight.position.copy(this.camera.position);
+    const direction = new THREE.Vector3();
+    this.camera.getWorldDirection(direction);
+    this.flashlightTarget.position.copy(this.camera.position).add(direction.multiplyScalar(8));
+  }
+
+  private updateHud(safe: number, total: number, prompt: string, monsterAwake: boolean) {
+    const objective = this.mount.querySelector<HTMLElement>("#objectiveText");
+    const promptElement = this.mount.querySelector<HTMLElement>("#promptText");
+    const threat = this.mount.querySelector<HTMLElement>("#threatText");
+    const staminaFill = this.mount.querySelector<HTMLElement>("#staminaFill");
+    const batteryFill = this.mount.querySelector<HTMLElement>("#batteryFill");
+    if (objective) objective.textContent = `CAMPERS SAFE ${safe} / ${total}`;
+    if (promptElement) promptElement.textContent = prompt;
+    if (threat) threat.textContent = monsterAwake ? "SOMETHING IS MOVING IN THE TREES" : "THE WOODS ARE QUIET";
+    if (staminaFill) staminaFill.style.width = `${Math.round(this.stamina * 100)}%`;
+    if (batteryFill) batteryFill.style.width = `${Math.round(this.battery * 100)}%`;
+  }
+
+  private showRoundEnd(won: boolean) {
+    const overlay = this.mount.querySelector<HTMLElement>("#roundEnd");
+    const title = this.mount.querySelector<HTMLElement>("#roundEndTitle");
+    const text = this.mount.querySelector<HTMLElement>("#roundEndText");
+    if (!overlay || !title || !text) return;
+    title.textContent = won ? "EVACUATION COMPLETE" : "THE WOODS FOUND YOU";
+    text.textContent = won ? "Seven campers accounted for. The bus can leave." : "Stay together. Search faster. Try again from the menu.";
+    overlay.classList.remove("hidden");
   }
 
   private resize() {
