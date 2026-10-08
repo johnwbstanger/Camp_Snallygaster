@@ -29,7 +29,7 @@ jobs:
 
       - name: Build browser client
         env:
-          VITE_SERVER_URL: https://camp-snallygaster-extraction--willstanger.replit.app
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-rebuild.onrender.com' }}
         run: npm run build
 
       - name: Verify compiled output
@@ -47,7 +47,7 @@ jobs:
           touch .nojekyll
           git init
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "4189822+github-actions[bot]@users.noreply.github.com"
           git checkout -b gh-pages
           git add -A
           git commit -m "Publish Camp Snallygaster client from ${GITHUB_SHA}"
