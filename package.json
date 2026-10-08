@@ -1,6 +1,6 @@
 {
   "name": "camp-snallygaster-rebuild",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "start": "tsx server/index.ts",
     "typecheck": "tsc --noEmit",
-    "smoke:multiplayer": "node scripts/multiplayer-smoke.mjs"
+    "smoke:multiplayer": "node scripts/multiplayer-smoke.mjs",
+    "smoke:production": "node scripts/production-smoke.mjs"
   },
   "dependencies": {
     "cannon-es": "0.20.0",
