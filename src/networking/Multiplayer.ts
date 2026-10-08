@@ -8,7 +8,9 @@ export type RoomInfo = {
   players: PlayerState[];
 };
 
-const DEFAULT_PRODUCTION_SERVER = "https://camp-snallygaster-rebuild.onrender.com";
+const CURRENT_RENDER_SERVER = "https://camp-snallygaster-rebuild.onrender.com";
+const ARCHIVED_WORKING_RENDER_SERVER = "https://camp-snallygaster.onrender.com";
+const CONNECT_TIMEOUT_MS = 20000;
 
 export class MultiplayerClient {
   private socket: WebSocket | null = null;
@@ -33,43 +35,10 @@ export class MultiplayerClient {
     if (this.connected) return;
     if (this.connectPromise) return this.connectPromise;
 
-    if (this.socket && this.socket.readyState !== WebSocket.CLOSED) {
-      try { this.socket.close(); } catch {}
-    }
-
-    this.connectPromise = new Promise<void>((resolve, reject) => {
-      const endpoint = this.endpoint();
-      const socket = new WebSocket(endpoint);
-      this.socket = socket;
-      let settled = false;
-
-      const finishError = (message: string) => {
-        if (settled) return;
-        settled = true;
-        try { socket.close(); } catch {}
-        reject(new Error(message));
-      };
-
-      const timeout = window.setTimeout(() => {
-        finishError("Multiplayer server is still waking up. Try Create Camp again in a few seconds.");
-      }, 45000);
-
-      socket.addEventListener("open", () => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
-        this.bindSocket(socket);
-        resolve();
-      }, { once: true });
-
-      socket.addEventListener("error", () => {
-        window.clearTimeout(timeout);
-        finishError("Could not reach the multiplayer server");
-      }, { once: true });
-    }).finally(() => {
+    this.closeSocketOnly();
+    this.connectPromise = this.connectToFirstAvailable().finally(() => {
       this.connectPromise = null;
     });
-
     return this.connectPromise;
   }
 
@@ -97,8 +66,51 @@ export class MultiplayerClient {
     if (this.pendingWelcome) window.clearTimeout(this.pendingWelcome.timer);
     this.pendingWelcome = null;
     this.roomInfo = null;
-    this.socket?.close();
-    this.socket = null;
+    this.closeSocketOnly();
+  }
+
+  private async connectToFirstAvailable() {
+    const endpoints = this.endpointCandidates();
+    const failures: string[] = [];
+    for (const endpoint of endpoints) {
+      try {
+        const socket = await this.openSocket(endpoint);
+        this.socket = socket;
+        this.bindSocket(socket);
+        return;
+      } catch (error) {
+        failures.push(`${endpoint}: ${error instanceof Error ? error.message : "connection failed"}`);
+      }
+    }
+    throw new Error(`Could not reach a multiplayer server. ${failures.join(" | ")}`);
+  }
+
+  private openSocket(endpoint: string) {
+    return new Promise<WebSocket>((resolve, reject) => {
+      const socket = new WebSocket(endpoint);
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        socket.removeEventListener("open", onOpen);
+        socket.removeEventListener("error", onError);
+        socket.removeEventListener("close", onClose);
+        if (error) {
+          try { socket.close(); } catch {}
+          reject(error);
+        } else {
+          resolve(socket);
+        }
+      };
+      const onOpen = () => finish();
+      const onError = () => finish(new Error("socket error"));
+      const onClose = () => finish(new Error("socket closed before opening"));
+      const timer = window.setTimeout(() => finish(new Error("connection timed out")), CONNECT_TIMEOUT_MS);
+      socket.addEventListener("open", onOpen, { once: true });
+      socket.addEventListener("error", onError, { once: true });
+      socket.addEventListener("close", onClose, { once: true });
+    });
   }
 
   private awaitWelcome(message: ClientMessage) {
@@ -110,7 +122,7 @@ export class MultiplayerClient {
     return new Promise<RoomInfo>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         this.pendingWelcome = null;
-        reject(new Error("Camp request timed out"));
+        reject(new Error("Camp request timed out before the server returned a room code"));
       }, 20000);
       this.pendingWelcome = { resolve, reject, timer };
       this.send(message);
@@ -197,20 +209,39 @@ export class MultiplayerClient {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message));
   }
 
-  private endpoint() {
+  private endpointCandidates() {
     const configured = String(import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
-    const isGitHubPages = location.hostname.endsWith("github.io");
-    const productionBase = configured || (isGitHubPages ? DEFAULT_PRODUCTION_SERVER : "");
+    if (configured) return [toWebSocket(configured)];
 
-    if (productionBase) {
-      const base = productionBase.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
-      return `${base}/ws`;
-    }
     if (import.meta.env.DEV) {
-      return `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:3001/ws`;
+      return [`${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:3001/ws`];
     }
-    return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+
+    if (location.hostname.endsWith("github.io")) {
+      return [
+        toWebSocket(CURRENT_RENDER_SERVER),
+        toWebSocket(ARCHIVED_WORKING_RENDER_SERVER),
+      ];
+    }
+
+    return [
+      `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`,
+      toWebSocket(CURRENT_RENDER_SERVER),
+      toWebSocket(ARCHIVED_WORKING_RENDER_SERVER),
+    ];
   }
+
+  private closeSocketOnly() {
+    if (this.socket) {
+      try { this.socket.close(); } catch {}
+    }
+    this.socket = null;
+  }
+}
+
+function toWebSocket(base: string) {
+  const wsBase = base.replace(/\/$/, "").replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+  return `${wsBase}/ws`;
 }
 
 function cleanName(name: string) {
