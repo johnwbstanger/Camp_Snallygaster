@@ -7,6 +7,8 @@ export type AssetKey =
   | "camperMale"
   | "camperFemale"
   | "counselor"
+  | "counselorMale"
+  | "counselorFemale"
   | "cooler"
   | "canoe"
   | "cabin"
@@ -26,25 +28,16 @@ type AssetDefinition = {
 const QUATERNIUS_BASE = "https://raw.githubusercontent.com/dustinc555/mygame/f2cc1affbca335b74ee44ecbd765db4bd17f0f05/assets/vendor/quaternius/universal_base_characters/base_characters";
 const TEEN_MALE = `${QUATERNIUS_BASE}/Teen_Male_FullBody.gltf`;
 const TEEN_FEMALE = `${QUATERNIUS_BASE}/Teen_Female_FullBody.gltf`;
+const REGULAR_MALE = `${QUATERNIUS_BASE}/Regular_Male_FullBody.gltf`;
+const REGULAR_FEMALE = `${QUATERNIUS_BASE}/Regular_Female_FullBody.gltf`;
+
 const ASSETS: Record<AssetKey, AssetDefinition> = {
-  // Keep the generic key used by ObjectiveSystem, but point it at the actual
-  // teen-proportion Quaternius body instead of the temporary adult beach model.
-  camper: {
-    url: TEEN_MALE,
-    targetHeight: 1.55,
-  },
-  camperMale: {
-    url: TEEN_MALE,
-    targetHeight: 1.55,
-  },
-  camperFemale: {
-    url: TEEN_FEMALE,
-    targetHeight: 1.52,
-  },
-  counselor: {
-    url: "https://raw.githubusercontent.com/Hhk187/Zomopocalypse/main/Assets/Models/Characters/Ultimate%20Modular%20Men%20Pack-glb/Casual%20Character.glb",
-    targetHeight: 1.78,
-  },
+  camper: { url: TEEN_MALE, targetHeight: 1.55 },
+  camperMale: { url: TEEN_MALE, targetHeight: 1.55 },
+  camperFemale: { url: TEEN_FEMALE, targetHeight: 1.52 },
+  counselor: { url: REGULAR_MALE, targetHeight: 1.78 },
+  counselorMale: { url: REGULAR_MALE, targetHeight: 1.78 },
+  counselorFemale: { url: REGULAR_FEMALE, targetHeight: 1.72 },
   cooler: {
     url: "https://cdn.3dassets.dev/assets/28560/v1/model.glb",
     targetLongestSide: 0.9,
