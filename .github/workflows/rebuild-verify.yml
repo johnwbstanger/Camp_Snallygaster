@@ -2,7 +2,7 @@ name: Rebuild MVP Verify
 
 on:
   push:
-    branches: [rebuild/mvp-stable-baseline]
+    branches: [main, rebuild/mvp-stable-baseline]
   pull_request:
     branches: [main]
   workflow_dispatch:
