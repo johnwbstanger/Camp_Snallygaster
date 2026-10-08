@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 export type AssetKey =
+  | "camper"
   | "camperMale"
   | "camperFemale"
   | "counselor"
@@ -23,13 +24,21 @@ type AssetDefinition = {
 // Every external visual is documented in docs/ASSET_PROVENANCE.md and has a
 // local gameplay/collision fallback. Render assets never define gameplay physics.
 const QUATERNIUS_BASE = "https://raw.githubusercontent.com/dustinc555/mygame/f2cc1affbca335b74ee44ecbd765db4bd17f0f05/assets/vendor/quaternius/universal_base_characters/base_characters";
+const TEEN_MALE = `${QUATERNIUS_BASE}/Teen_Male_FullBody.gltf`;
+const TEEN_FEMALE = `${QUATERNIUS_BASE}/Teen_Female_FullBody.gltf`;
 const ASSETS: Record<AssetKey, AssetDefinition> = {
+  // Keep the generic key used by ObjectiveSystem, but point it at the actual
+  // teen-proportion Quaternius body instead of the temporary adult beach model.
+  camper: {
+    url: TEEN_MALE,
+    targetHeight: 1.55,
+  },
   camperMale: {
-    url: `${QUATERNIUS_BASE}/Teen_Male_FullBody.gltf`,
+    url: TEEN_MALE,
     targetHeight: 1.55,
   },
   camperFemale: {
-    url: `${QUATERNIUS_BASE}/Teen_Female_FullBody.gltf`,
+    url: TEEN_FEMALE,
     targetHeight: 1.52,
   },
   counselor: {
