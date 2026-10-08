@@ -34,18 +34,48 @@ try {
     if (!response.ok) throw new Error(`compiled asset failed to load: ${assetPath} (${response.status})`);
   }
 
-  await new Promise((resolve, reject) => {
-    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-    const timer = setTimeout(() => reject(new Error("production WebSocket timed out")), 4000);
-    socket.once("open", () => {
-      clearTimeout(timer);
-      socket.close();
-      resolve();
-    });
-    socket.once("error", reject);
-  });
+  const welcome = await createRoom(`ws://127.0.0.1:${port}/ws`);
+  if (!/^[A-Z0-9]{4,8}$/.test(String(welcome.roomCode || ""))) {
+    throw new Error(`production create did not return a usable room code: ${JSON.stringify(welcome)}`);
+  }
+  if (!welcome.playerId || !welcome.hostId || welcome.playerId !== welcome.hostId) {
+    throw new Error(`production create did not make creator the host: ${JSON.stringify(welcome)}`);
+  }
+  if (welcome.maxPlayers !== 15) throw new Error(`expected 15-player capacity, got ${welcome.maxPlayers}`);
 
-  console.log(`PRODUCTION SMOKE PASS: index + ${assetPaths.length} compiled assets + /ws loaded successfully`);
+  console.log(`PRODUCTION SMOKE PASS: index + ${assetPaths.length} compiled assets + create-room welcome ${welcome.roomCode}`);
 } finally {
   server.kill("SIGTERM");
+}
+
+function createRoom(endpoint) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(endpoint);
+    const timer = setTimeout(() => {
+      socket.terminate();
+      reject(new Error("production create-room handshake timed out"));
+    }, 5000);
+
+    socket.once("open", () => {
+      socket.send(JSON.stringify({ type: "create", name: "Production Smoke" }));
+    });
+    socket.on("message", (raw) => {
+      let message;
+      try { message = JSON.parse(String(raw)); } catch { return; }
+      if (message.type === "error") {
+        clearTimeout(timer);
+        socket.close();
+        reject(new Error(`production create-room error: ${message.message}`));
+      }
+      if (message.type === "welcome") {
+        clearTimeout(timer);
+        socket.close();
+        resolve(message);
+      }
+    });
+    socket.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
 }
