@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  browser-runtime:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,3 +20,5 @@ jobs:
       - run: npm run build
       - name: Verify production entry exists
         run: test -f dist/client/index.html && grep -q "assets/" dist/client/index.html
+      - name: Verify create, join, roster, start, and movement sync
+        run: npm run smoke:multiplayer
