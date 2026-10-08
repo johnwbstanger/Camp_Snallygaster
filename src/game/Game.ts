@@ -26,10 +26,13 @@ export class Game {
   private pitch = -0.08;
   private lastPoseEmit = 0;
   private poseListener: ((pose: PlayerPose) => void) | null = null;
-  private interactListener: (() => void) | null = null;
+  private interactListener: ((targetId?: string) => void) | null = null;
   private sharedRound: SharedRoundState | null = null;
   private remotePlayers = new Map<string, THREE.Group>();
   private respawnPose: PlayerPose = { x: 0, y: 1.4, z: 27, yaw: Math.PI };
+  private interactionRay = new THREE.Raycaster();
+  private interactionTargetId: string | null = null;
+  private interactionPrompt = "";
   private readonly mobile = matchMedia("(pointer: coarse)").matches || /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
   private readonly resizeHandler = () => this.resize();
   private readonly visibilityHandler = () => {
@@ -112,8 +115,12 @@ export class Game {
   }
 
   onPose(callback: (pose: PlayerPose) => void) { this.poseListener = callback; }
-  onInteract(callback: () => void) { this.interactListener = callback; }
-  setSharedRoundState(state: SharedRoundState) { this.sharedRound = state; }
+  onInteract(callback: (targetId?: string) => void) { this.interactListener = callback; }
+
+  setSharedRoundState(state: SharedRoundState) {
+    this.sharedRound = state;
+    this.world?.updateDoors(state.doors);
+  }
 
   setLocalPose(pose: PlayerPose) {
     if (!this.player) return;
@@ -232,7 +239,6 @@ export class Game {
     if (input.flashlightPressed && this.battery > 0.01) this.flashlightOn = !this.flashlightOn;
     if (this.flashlightOn) this.battery = Math.max(0, this.battery - dt * 0.009);
     if (this.battery <= 0) this.flashlightOn = false;
-    if (this.networked && input.interactPressed) this.interactListener?.();
 
     this.physics.step(1 / 60, dt, 3);
     const p = this.player.position;
@@ -246,12 +252,24 @@ export class Game {
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
     this.updateFlashlight();
+    this.updateInteraction();
+
+    let usedWorldInteraction = false;
+    if (input.interactPressed && this.interactionTargetId) {
+      usedWorldInteraction = true;
+      if (this.networked) this.interactListener?.(this.interactionTargetId);
+      else this.world.toggleLocalDoor(this.interactionTargetId);
+    } else if (this.networked && input.interactPressed) {
+      this.interactListener?.();
+    }
 
     const playerPosition = new THREE.Vector3(p.x, p.y, p.z);
     const objective = this.networked
       ? this.objectives.updateShared(playerPosition, this.sharedRound)
-      : this.objectives.updateLocal(playerPosition, input.interactPressed, dt);
-    this.updateHud(objective.safe, objective.total, objective.prompt, objective.monsterAwake);
+      : this.objectives.updateLocal(playerPosition, input.interactPressed && !usedWorldInteraction, dt);
+    const prompt = this.interactionPrompt || objective.prompt;
+    this.updateHud(objective.safe, objective.total, prompt, objective.monsterAwake);
+
     if (!this.roundEnded && (objective.complete || objective.caught)) {
       this.roundEnded = true;
       this.showRoundEnd(objective.complete);
@@ -264,6 +282,21 @@ export class Game {
 
     this.renderer.render(this.world.scene, this.camera);
     this.frameId = requestAnimationFrame((time) => this.loop(time));
+  }
+
+  private updateInteraction() {
+    this.interactionTargetId = null;
+    this.interactionPrompt = "";
+    if (this.world.interactables.length === 0) return;
+
+    this.interactionRay.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    const hit = this.interactionRay
+      .intersectObjects(this.world.interactables, true)
+      .find((candidate) => candidate.distance <= 3.25 && candidate.object.userData.targetId);
+
+    if (!hit) return;
+    this.interactionTargetId = String(hit.object.userData.targetId);
+    this.interactionPrompt = `E / USE · ${String(hit.object.userData.prompt || "INTERACT")}`;
   }
 
   private updateFlashlight() {
