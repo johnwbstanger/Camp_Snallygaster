@@ -1,23 +1,28 @@
 # Camp Snallygaster external asset provenance
 
-Camp Snallygaster may load third-party GLB models at runtime, but only when the source and redistribution license have been checked. The game keeps local fallback geometry and local collision bodies so gameplay does not depend on a remote visual asset.
+Camp Snallygaster may load third-party 3D models at runtime, but only when the source and redistribution license have been checked. The game keeps local fallback geometry and local collision bodies so gameplay does not depend on a remote visual asset.
 
 ## Accepted sources
 
 | Runtime key | Asset | Source | License | Notes |
 | --- | --- | --- | --- | --- |
-| `counselor` | Quaternius Ultimate Modular Men — Casual Character | Quaternius pack mirrored in `Hhk187/Zomopocalypse` | CC0 | Rigged humanoid visual for remote counselors. Source pack is a Quaternius public-domain asset pack. |
-| `camper` | Quaternius Ultimate Modular Men — Beach Character | Quaternius pack mirrored in `Hhk187/Zomopocalypse` | CC0 | Temporary camper visual until the teen meshes from Universal Base Characters are vendored directly. Gameplay scales camper roots to 50% of their previous rendered size. |
-| `cooler` | Drinks Cooler | `3dassets.dev` asset 28560 | CC0 | Runtime GLB, approximately 4k triangles. |
+| `camper`, `camperMale` | Quaternius Universal Base Characters — Teen Male Full Body | Quaternius pack vendored in `dustinc555/mygame` from the official Quaternius release | CC0 1.0 Universal | Actual teen-proportion humanoid camper body. Gameplay additionally scales the camper root to 50% of the previous rendered camper size. |
+| `camperFemale` | Quaternius Universal Base Characters — Teen Female Full Body | Quaternius pack vendored in `dustinc555/mygame` from the official Quaternius release | CC0 1.0 Universal | Teen-proportion female humanoid body available to the camper visual pipeline. |
+| `counselor` | Quaternius Ultimate Modular Men — Casual Character | Quaternius pack mirrored in `Hhk187/Zomopocalypse` | CC0 | Humanoid visual for remote counselors. Source pack is a Quaternius public-domain asset pack. |
+| `cooler` | Drinks Cooler | `3dassets.dev` asset 28560 | CC0 | Runtime GLB. Local collision remains authoritative. |
 | `canoe` | Canoe | `3dassets.dev` asset 28833 | CC0 | Runtime GLB. Local collision remains authoritative. |
-| `cabin` | Driver Rest Cabin | `3dassets.dev` asset 34212 | CC0 | Used only as an optional visual detail/reference. Camp cabin collision and entrances remain local. |
-| `bus` | City Bus Single Decker | `3dassets.dev` asset 34194 | CC0 | Includes named door/wheel nodes and open/close/roll animation clips. Local bus collision remains authoritative. |
+| `cabin` | Driver Rest Cabin | `3dassets.dev` asset 34212 | CC0 | Optional visual reference/detail source. Camp cabin collision and entrances remain local and deterministic. |
+| `bus` | City Bus Single Decker | `3dassets.dev` asset 34194 | CC0 | Includes door/wheel nodes and animation clips. Local bus collision remains authoritative. |
+| `tree` | Young Conifer 3.6m | `3dassets.dev` asset 32685 | CC0 | Higher-detail forest set dressing placed around the camp perimeter. Tree collision remains a local upright blocker. |
+| `cartons` | Parcel Stack, Small | `3dassets.dev` asset 34800 | CC0 | Taped carton stack used around maintenance/storage areas; local storage collision remains authoritative. |
 
-## Approved character target
+## Character source verification
 
-Quaternius **Universal Base Characters** is the preferred camper-character source. The current official pack page states that it contains regular and teen male/female humanoid models, an animation-friendly humanoid rig, glTF output, and a CC0 dedication. It is compatible with Quaternius' CC0 Universal Animation Library. When its teen files are vendored into this repository, they should replace the temporary Beach Character without changing gameplay code.
+Quaternius **Universal Base Characters** is the camper-character source. The official pack describes regular and teen male/female humanoid models, animation-friendly topology, a humanoid rig, glTF output, and a CC0 dedication. The repository mirror used by the runtime preserves the Quaternius vendor directory and includes both `Teen_Male_FullBody.gltf` and `Teen_Female_FullBody.gltf` plus their referenced binary/texture files.
 
 Official source: https://quaternius.com/packs/universalbasecharacters.html
+
+Vendored mirror revision used by the runtime: `dustinc555/mygame@f2cc1affbca335b74ee44ecbd765db4bd17f0f05`
 
 ## Rules
 
