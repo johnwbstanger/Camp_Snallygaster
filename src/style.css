@@ -111,6 +111,7 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
 .hud-kicker { color: var(--mustard); font-size: 9px; letter-spacing: .08em; }
 .hud-objective { margin-top: 6px; color: var(--cream); font-size: 13px; }
 .hud-threat { margin-top: 4px; color: #c1cec6; font-size: 9px; }
+.control-help { position:absolute; top:calc(env(safe-area-inset-top) + 16px); left:50%; transform:translateX(-50%); padding:7px 10px; border-radius:8px; background:rgba(19,33,27,.58); border:1px solid rgba(244,236,216,.12); color:#d8cfb9; font-size:9px; letter-spacing:.04em; white-space:nowrap; }
 .game-prompt { position: absolute; left: 50%; bottom: 25%; transform: translateX(-50%); padding: 8px 12px; border-radius: 8px; background: rgba(19,33,27,.72); font-size: 11px; white-space: nowrap; }
 .meters { position: absolute; left: calc(env(safe-area-inset-left) + 14px); bottom: calc(env(safe-area-inset-bottom) + 16px); width: min(250px, 54vw); display: grid; gap: 7px; font-size: 9px; }
 .meter { height: 7px; margin-top: 3px; overflow: hidden; border-radius: 99px; background: rgba(244,236,216,.13); }
@@ -136,11 +137,12 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
 .touch-action.active { background:rgba(207,106,62,.88); }
 
 @media (pointer: fine) { .touch-ui { display: none; } }
+@media (pointer: coarse) { .control-help { display:none; } }
 @media (max-width: 560px) {
   .menu-card { width: 94vw; border-radius: 18px; padding: 24px; }
   .network-row { grid-template-columns: 1fr; }
   .join-row { grid-template-columns: 1fr; }
   h1 { font-size: clamp(54px, 17vw, 82px); }
-  .meters { bottom: calc(env(safe-area-inset-bottom) + 150px); width: 42vw; }
-  .game-prompt { bottom: 20%; max-width:80vw; white-space:normal; text-align:center; }
+  .meters { bottom: calc(env(safe-area-inset-bottom) + 172px); width: 42vw; }
+  .game-prompt { bottom: 22%; max-width:80vw; white-space:normal; text-align:center; }
 }
