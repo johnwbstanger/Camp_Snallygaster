@@ -78,7 +78,7 @@ export class MultiplayerClient {
   }
 
   startCamp() { this.send({ type: "start" }); }
-  interact() { this.send({ type: "interact" }); }
+  interact(targetId?: string) { this.send(targetId ? { type: "interact", targetId } : { type: "interact" }); }
   sendPose(pose: PlayerPose) { this.send({ type: "move", pose }); }
 
   onRoster(callback: (room: RoomInfo) => void) { this.onRosterCallback = callback; }

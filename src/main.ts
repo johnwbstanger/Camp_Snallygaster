@@ -81,7 +81,7 @@ async function launchGame(networked: boolean) {
       if (localPlayer) game.setLocalPose(localPlayer.pose);
       game.setRemotePlayers(room.players, room.playerId);
       game.onPose((pose) => multiplayer?.sendPose(pose));
-      game.onInteract(() => multiplayer?.interact());
+      game.onInteract((targetId) => multiplayer?.interact(targetId));
       if (latestRound) game.setSharedRoundState(latestRound);
     }
 

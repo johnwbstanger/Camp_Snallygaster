@@ -124,13 +124,41 @@ try {
   const observer = clients[1];
   const hostStartPromise = nextMessage(host, (m) => m.type === "start");
   const observerStartPromise = nextMessage(observer, (m) => m.type === "start");
-  const initialRoundPromise = nextMessage(observer, (m) => m.type === "round" && m.state?.phase === "ACTIVE");
+  const initialRoundPromise = nextMessage(
+    observer,
+    (m) => m.type === "round" && m.state?.phase === "ACTIVE" && Array.isArray(m.state?.doors) && m.state.doors.length === 10,
+  );
   send(host, { type: "start" });
   await Promise.all([hostStartPromise, observerStartPromise, initialRoundPromise]);
 
+  const doorApproachPromise = nextMessage(
+    observer,
+    (m) => m.type === "snapshot" && m.players?.some(
+      (p) => p.id === hostWelcome.playerId && Math.abs(p.pose.x) < 0.001 && Math.abs(p.pose.z + 22.5) < 0.001,
+    ),
+  );
+  send(host, { type: "move", pose: { x: 0, y: 1.4, z: -22.5, yaw: Math.PI } });
+  await doorApproachPromise;
+
+  const doorOpenPromise = nextMessage(
+    observer,
+    (m) => m.type === "round" && m.state?.doors?.some((door) => door.id === "door:dining" && door.open === true),
+  );
+  send(host, { type: "interact", targetId: "door:dining" });
+  await doorOpenPromise;
+
+  const doorClosePromise = nextMessage(
+    observer,
+    (m) => m.type === "round" && m.state?.doors?.some((door) => door.id === "door:dining" && door.open === false),
+  );
+  send(host, { type: "interact", targetId: "door:dining" });
+  await doorClosePromise;
+
   const observerSnapshotPromise = nextMessage(
     observer,
-    (m) => m.type === "snapshot" && m.players?.length === MAX_PLAYERS && m.players.some((p) => p.id === hostWelcome.playerId && Math.abs(p.pose.x + 21) < 0.001),
+    (m) => m.type === "snapshot" && m.players?.length === MAX_PLAYERS && m.players.some(
+      (p) => p.id === hostWelcome.playerId && Math.abs(p.pose.x + 21) < 0.001,
+    ),
   );
   send(host, { type: "move", pose: { x: -21, y: 1.4, z: 8, yaw: 1.2 } });
   await observerSnapshotPromise;
@@ -150,7 +178,7 @@ try {
   await sharedRescuePromise;
 
   console.log(
-    `MULTIPLAYER SMOKE PASS: ${hostWelcome.roomCode}, ${MAX_PLAYERS}/${MAX_PLAYERS} clients, unique spawns, overflow rejection, start, movement, rescue, and threat sync verified`,
+    `MULTIPLAYER SMOKE PASS: ${hostWelcome.roomCode}, ${MAX_PLAYERS}/${MAX_PLAYERS} clients, unique spawns, overflow rejection, shared doors, start, movement, rescue, and threat sync verified`,
   );
 } finally {
   try { overflowClient?.close(); } catch {}

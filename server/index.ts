@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
-import type { CamperState, ClientMessage, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "../shared/protocol.js";
+import type { CamperState, ClientMessage, DoorState, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "../shared/protocol.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,12 +24,27 @@ type Room = {
   round: SharedRoundState;
 };
 
+type DoorDefinition = { id: string; x: number; z: number };
+
 const rooms = new Map<string, Room>();
 const clientMeta = new WeakMap<WebSocket, ClientMeta>();
 
 const CAMPERS: ReadonlyArray<readonly [string, number, number, number]> = [
   ["Ben", -21, 0.8, 8], ["Maya", -11, 0.8, -10], ["Jamie", 13, 0.8, 9],
   ["Katie", 20, 0.8, -17], ["Nate", -19, 0.8, -18], ["Jess", -4, 0.8, 21], ["Luke", 25, 0.8, 16],
+];
+
+const DOORS: ReadonlyArray<DoorDefinition> = [
+  { id: "door:dining", x: 0, z: -22.5 },
+  { id: "door:cabin-a", x: -23, z: 6.75 },
+  { id: "door:cabin-b", x: 23, z: 6.75 },
+  { id: "door:bath-house", x: -27, z: -19.5 },
+  { id: "door:arts-crafts", x: 27, z: -19.5 },
+  { id: "door:director", x: 0, z: 15.5 },
+  { id: "door:cabin-c", x: -45, z: 16.75 },
+  { id: "door:cabin-d", x: 45, z: 16.75 },
+  { id: "door:infirmary", x: -43, z: -36 },
+  { id: "door:maintenance", x: 43, z: -36 },
 ];
 
 app.disable("x-powered-by");
@@ -107,7 +122,7 @@ wss.on("connection", (socket) => {
 
     if (message.type === "interact") {
       if (room.round.phase !== "ACTIVE") return;
-      handleInteract(room, meta.playerId);
+      handleInteract(room, meta.playerId, message.targetId);
       broadcastRound(room);
       return;
     }
@@ -147,6 +162,7 @@ function createRoundState(phase: SharedRoundState["phase"]): SharedRoundState {
       followingPlayerId: null,
       position: { x, y, z },
     })),
+    doors: DOORS.map(({ id }): DoorState => ({ id, open: false })),
     monster: { x: -32, y: 0, z: -29, awake: false },
     campersSafe: 0,
     campersFound: 0,
@@ -175,9 +191,19 @@ function addPlayer(room: Room, socket: WebSocket, rawName: string) {
   return player;
 }
 
-function handleInteract(room: Room, playerId: string) {
+function handleInteract(room: Room, playerId: string, targetId?: string) {
   const player = room.players.get(playerId);
   if (!player) return;
+
+  if (targetId?.startsWith("door:")) {
+    const definition = DOORS.find((door) => door.id === targetId);
+    const door = room.round.doors.find((candidate) => candidate.id === targetId);
+    if (!definition || !door) return;
+    if (distance2D(player.pose, definition) > 4.0) return;
+    door.open = !door.open;
+    return;
+  }
+
   let nearest: CamperState | null = null;
   let nearestDistance = Infinity;
   for (const camper of room.round.campers) {
