@@ -1,0 +1,54 @@
+name: Publish compiled client branch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-gh-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build browser client
+        env:
+          VITE_SERVER_URL: https://camp-snallygaster-extraction--willstanger.replit.app
+        run: npm run build
+
+      - name: Verify compiled output
+        run: |
+          test -f dist/client/index.html
+          grep -q "assets/" dist/client/index.html
+          ! grep -q "/src/main.ts" dist/client/index.html
+          ! grep -q "/src/style.css" dist/client/index.html
+
+      - name: Publish compiled files to gh-pages branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist/client
+          touch .nojekyll
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b gh-pages
+          git add -A
+          git commit -m "Publish Camp Snallygaster client from ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
