@@ -1,28 +1,43 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-export type CampModelKey = "cardboardBox" | "picnicTable" | "barrel";
+export type CampModelKey = "cardboardBox" | "picnicTable" | "barrel" | "cooler";
 
 type ModelSpec = {
-  url: string;
+  urls: string[];
   targetSize: number;
   rotationY?: number;
 };
 
-// Poly Haven models are CC0. Keep these URLs isolated here so they can be
-// mirrored locally later without changing gameplay or physics code.
+// External assets are isolated here so gameplay code never depends on a model
+// loading successfully. Poly Haven and 3DAssets.dev entries used below are CC0.
+// Every request has a procedural fallback in the game if the CDN is unavailable.
 const MODEL_SPECS: Record<CampModelKey, ModelSpec> = {
   cardboardBox: {
-    url: "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/cardboard_box_01/cardboard_box_01_1k.gltf",
+    urls: [
+      "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/cardboard_box_01/cardboard_box_01_1k.gltf",
+    ],
     targetSize: 0.95,
   },
   picnicTable: {
-    url: "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/wooden_picnic_table/wooden_picnic_table_1k.gltf",
+    urls: [
+      "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/wooden_picnic_table/wooden_picnic_table_1k.gltf",
+      "https://cdn.3dassets.dev/assets/18385/v1/model.glb",
+    ],
     targetSize: 4.2,
   },
   barrel: {
-    url: "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/Barrel_01/Barrel_01_1k.gltf",
-    targetSize: 0.9,
+    urls: [
+      "https://cdn.3dassets.dev/assets/19956/v1/model.glb",
+    ],
+    targetSize: 0.92,
+  },
+  cooler: {
+    urls: [
+      "https://cdn.3dassets.dev/assets/28560/v1/model.glb",
+      "https://cdn.3dassets.dev/assets/22308/v1/model.glb",
+    ],
+    targetSize: 1.25,
   },
 };
 
@@ -41,9 +56,21 @@ export class ExternalModelLibrary {
     if (existing) return existing;
 
     const spec = MODEL_SPECS[key];
-    const request = new Promise<THREE.Group | null>((resolve) => {
+    const request = this.tryUrls(key, spec, 0);
+    this.cache.set(key, request);
+    return request;
+  }
+
+  private tryUrls(key: CampModelKey, spec: ModelSpec, index: number): Promise<THREE.Group | null> {
+    const url = spec.urls[index];
+    if (!url) {
+      console.warn(`[assets] All sources failed for ${key}; keeping fallback mesh`);
+      return Promise.resolve(null);
+    }
+
+    return new Promise<THREE.Group | null>((resolve) => {
       this.loader.load(
-        spec.url,
+        url,
         (gltf) => {
           try {
             const model = gltf.scene;
@@ -58,19 +85,17 @@ export class ExternalModelLibrary {
             });
             resolve(model);
           } catch (error) {
-            console.warn(`[assets] Could not prepare ${key}; keeping fallback mesh`, error);
-            resolve(null);
+            console.warn(`[assets] Could not prepare ${key} from ${url}`, error);
+            void this.tryUrls(key, spec, index + 1).then(resolve);
           }
         },
         undefined,
         (error) => {
-          console.warn(`[assets] Could not load ${key}; keeping fallback mesh`, error);
-          resolve(null);
+          console.warn(`[assets] Could not load ${key} from ${url}`, error);
+          void this.tryUrls(key, spec, index + 1).then(resolve);
         },
       );
     });
-    this.cache.set(key, request);
-    return request;
   }
 
   private normalize(model: THREE.Group, spec: ModelSpec) {
