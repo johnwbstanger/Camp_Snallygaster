@@ -1,4 +1,4 @@
-import type { ClientMessage, PlayerPose, PlayerState, ServerMessage } from "../../shared/protocol";
+import type { ClientMessage, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "../../shared/protocol";
 
 export type RoomInfo = {
   roomCode: string;
@@ -14,6 +14,7 @@ export class MultiplayerClient {
   private roomInfo: RoomInfo | null = null;
   private onRosterCallback: ((room: RoomInfo) => void) | null = null;
   private onSnapshotCallback: ((players: PlayerState[]) => void) | null = null;
+  private onRoundCallback: ((state: SharedRoundState) => void) | null = null;
   private onStartCallback: (() => void) | null = null;
   private onErrorCallback: ((message: string) => void) | null = null;
 
@@ -65,16 +66,13 @@ export class MultiplayerClient {
     return this.awaitWelcome({ type: "join", roomCode: roomCode.trim().toUpperCase(), name: cleanName(name) });
   }
 
-  startCamp() {
-    this.send({ type: "start" });
-  }
-
-  sendPose(pose: PlayerPose) {
-    this.send({ type: "move", pose });
-  }
+  startCamp() { this.send({ type: "start" }); }
+  interact() { this.send({ type: "interact" }); }
+  sendPose(pose: PlayerPose) { this.send({ type: "move", pose }); }
 
   onRoster(callback: (room: RoomInfo) => void) { this.onRosterCallback = callback; }
   onSnapshot(callback: (players: PlayerState[]) => void) { this.onSnapshotCallback = callback; }
+  onRound(callback: (state: SharedRoundState) => void) { this.onRoundCallback = callback; }
   onStart(callback: () => void) { this.onStartCallback = callback; }
   onError(callback: (message: string) => void) { this.onErrorCallback = callback; }
 
@@ -137,6 +135,11 @@ export class MultiplayerClient {
 
       if (message.type === "snapshot") {
         this.onSnapshotCallback?.(message.players);
+        return;
+      }
+
+      if (message.type === "round") {
+        this.onRoundCallback?.(message.state);
         return;
       }
 
