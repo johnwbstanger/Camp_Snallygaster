@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import type { SharedRoundState, DoorState } from "../../shared/protocol";
 import { hasCampLineOfSight, MONSTER_HOME } from "../../shared/campVision";
-import { assetLibrary } from "./AssetLibrary";
 import { addCampDetailKit } from "./CampDetailKit";
 
 export type ObjectiveStatus = {
@@ -38,6 +37,7 @@ const CAMPERS = [
 
 const BUS_DOOR = new THREE.Vector3(2.95, 0.02, 29.55);
 const BUS_INSIDE = new THREE.Vector3(1.35, 0.3, 31.0);
+const CAMPER_RENDER_SCALE = 0.82;
 
 export class ObjectiveSystem {
   private campers: Camper[] = [];
@@ -127,7 +127,7 @@ export class ObjectiveSystem {
     CAMPERS.forEach(([name, x, y, z], index) => {
       const root = new THREE.Group();
       root.position.set(x, y, z);
-      root.scale.setScalar(0.5);
+      root.scale.setScalar(CAMPER_RENDER_SCALE);
 
       const visual = new THREE.Group();
       visual.name = "camper-visual";
@@ -151,15 +151,10 @@ export class ObjectiveSystem {
       this.campers.push(camper);
       this.camperById.set(camper.id, camper);
 
-      const characterKey = index % 2 === 0 ? "camperMale" : "camperFemale";
-      void assetLibrary.attach(characterKey, visual, { name: `camper-model-${index + 1}` }).then((model) => {
-        if (!model) return;
-        fallback.visible = false;
-        model.traverse((object) => {
-          object.userData.camperId = camper.id;
-          object.userData.targetId = `camper:${camper.id}`;
-          object.userData.prompt = `CALL TO ${name.toUpperCase()}`;
-        });
+      root.traverse((object) => {
+        object.userData.camperId = camper.id;
+        object.userData.targetId = `camper:${camper.id}`;
+        object.userData.prompt = `CALL TO ${name.toUpperCase()}`;
       });
     });
   }
@@ -168,38 +163,65 @@ export class ObjectiveSystem {
     const group = new THREE.Group();
     const shirtColors = [0xd7a844, 0xd46f4b, 0x5f8f7b, 0xc7789c, 0x5476a3, 0xc9853c, 0x6f8b55];
     const shortsColors = [0x334554, 0x56483d, 0x2e4d44, 0x45424b];
-    const skinColors = [0xc99368, 0xd6a27a, 0xb97b57, 0xe0b28a];
-    const shirt = new THREE.MeshStandardMaterial({ color: shirtColors[index % shirtColors.length], roughness: 0.78 });
-    const shorts = new THREE.MeshStandardMaterial({ color: shortsColors[index % shortsColors.length], roughness: 0.86 });
-    const skin = new THREE.MeshStandardMaterial({ color: skinColors[index % skinColors.length], roughness: 0.88 });
-    const shoes = new THREE.MeshStandardMaterial({ color: 0x30383a, roughness: 0.9 });
+    const packColors = [0x8b4e3d, 0x3f6c5d, 0xc18b38, 0x4c5875];
+    const skinColors = [0xc99368, 0xd6a27a, 0xb97b57, 0xe0b28a, 0x8f5d42];
+    const hairColors = [0x3f2f24, 0x211d1b, 0x7b5738, 0xb08a55, 0x442b22];
+    const shirt = new THREE.MeshStandardMaterial({ color: shirtColors[index % shirtColors.length], roughness: 0.82 });
+    const shorts = new THREE.MeshStandardMaterial({ color: shortsColors[index % shortsColors.length], roughness: 0.88 });
+    const skin = new THREE.MeshStandardMaterial({ color: skinColors[index % skinColors.length], roughness: 0.9 });
+    const hair = new THREE.MeshStandardMaterial({ color: hairColors[index % hairColors.length], roughness: 0.95 });
+    const shoes = new THREE.MeshStandardMaterial({ color: index % 2 ? 0xd8d0bd : 0x30383a, roughness: 0.9 });
+    const socks = new THREE.MeshStandardMaterial({ color: 0xd9d6c9, roughness: 0.95 });
+    const packMat = new THREE.MeshStandardMaterial({ color: packColors[index % packColors.length], roughness: 0.9 });
 
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.5, 5, 12), shirt);
-    torso.position.y = 0.87;
-    const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.3), shorts);
-    pelvis.position.y = 0.5;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), skin);
-    head.position.y = 1.48;
-    group.add(torso, pelvis, head);
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.5, 6, 14), shirt);
+    torso.position.y = 0.91;
+    const shortsBody = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.3, 0.32), shorts);
+    shortsBody.position.y = 0.53;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 14), skin);
+    head.position.y = 1.5;
+    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.226, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
+    hairCap.position.y = 1.57;
+    group.add(torso, shortsBody, head, hairCap);
 
     for (const side of [-1, 1]) {
-      const upperArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.32, 4, 8), skin);
-      upperArm.position.set(side * 0.32, 0.9, 0);
-      upperArm.name = side < 0 ? "arm-left" : "arm-right";
-      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.4, 4, 8), skin);
-      leg.position.set(side * 0.12, 0.19, 0);
+      const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.18, 4, 10), shirt);
+      sleeve.position.set(side * 0.31, 1.02, 0);
+      sleeve.name = side < 0 ? "arm-left" : "arm-right";
+      const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.18, 4, 10), skin);
+      forearm.position.set(side * 0.31, 0.76, 0);
+      sleeve.add(forearm);
+
+      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.3, 4, 10), skin);
+      leg.position.set(side * 0.12, 0.21, 0);
       leg.name = side < 0 ? "leg-left" : "leg-right";
-      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.1, 0.3), shoes);
-      shoe.position.set(side * 0.12, -0.08, 0.08);
-      group.add(upperArm, leg, shoe);
+      const sock = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.082, 0.17, 12), socks);
+      sock.position.set(side * 0.12, 0.0, 0);
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.11, 0.32), shoes);
+      shoe.position.set(side * 0.12, -0.11, 0.08);
+      group.add(sleeve, leg, sock, shoe);
     }
 
-    const pack = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.54, 0.2),
-      new THREE.MeshStandardMaterial({ color: [0x8b4e3d, 0x3f6c5d, 0xc18b38][index % 3], roughness: 0.86 }),
-    );
-    pack.position.set(0, 0.88, -0.23);
-    group.add(pack);
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.56, 0.22, 2, 2, 2), packMat);
+    pack.position.set(0, 0.91, -0.25);
+    const topRoll = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.4, 12), new THREE.MeshStandardMaterial({ color: 0xc49b59, roughness: 0.92 }));
+    topRoll.rotation.z = Math.PI / 2;
+    topRoll.position.set(0, 1.2, -0.28);
+    group.add(pack, topRoll);
+
+    if (index % 3 === 0) {
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.235, 0.08, 18), shirt);
+      cap.position.y = 1.7;
+      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.035, 0.18), shirt);
+      brim.position.set(0, 1.68, 0.17);
+      group.add(cap, brim);
+    }
+
+    const neckerchief = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 3), new THREE.MeshStandardMaterial({ color: 0xb43f34, roughness: 0.86 }));
+    neckerchief.rotation.x = Math.PI;
+    neckerchief.position.set(0, 1.23, 0.18);
+    group.add(neckerchief);
+
     group.traverse((object) => {
       if (object instanceof THREE.Mesh) {
         object.castShadow = !this.mobile;
