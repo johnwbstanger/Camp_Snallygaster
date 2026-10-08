@@ -1,7 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@500&family=Oswald:wght@500;600;700&display=swap');
-
 :root {
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #f4ecd8;
   background: #17261f;
   font-synthesis: none;
@@ -51,13 +49,14 @@ button { -webkit-tap-highlight-color: transparent; }
   border-radius: 24px;
   background: rgba(28,48,40,.94);
   box-shadow: 0 24px 80px rgba(0,0,0,.38);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
 }
-.eyebrow, .status, .field-label, .hud { font-family: "DM Mono", monospace; }
+.eyebrow, .status, .field-label, .hud { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 .eyebrow, .field-label { letter-spacing: .09em; }
 .eyebrow { color: var(--mustard); font-size: clamp(11px, 2.5vw, 14px); }
-h1 { margin: 12px 0 14px; font-family: "Oswald", Impact, sans-serif; font-size: clamp(56px, 13vw, 100px); line-height: .83; letter-spacing: -.035em; }
-h2 { margin: 10px 0 18px; font-family: "Oswald", Impact, sans-serif; font-size: clamp(38px, 10vw, 62px); line-height: .95; }
+h1 { margin: 12px 0 14px; font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif; font-size: clamp(56px, 13vw, 100px); line-height: .83; letter-spacing: -.025em; font-weight: 800; }
+h2 { margin: 10px 0 18px; font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif; font-size: clamp(38px, 10vw, 62px); line-height: .95; letter-spacing: .01em; }
 .lede { max-width: 48ch; color: #ded4bd; line-height: 1.5; font-size: clamp(14px, 3.5vw, 17px); }
 .field-label { display: block; margin: 18px 0 7px; color: #b9c7be; font-size: 10px; }
 .field {
@@ -69,6 +68,7 @@ h2 { margin: 10px 0 18px; font-family: "Oswald", Impact, sans-serif; font-size: 
   color: var(--cream);
   background: rgba(0,0,0,.16);
   outline: none;
+  font-size: 16px;
 }
 .field:focus { border-color: var(--mustard); box-shadow: 0 0 0 3px rgba(223,180,78,.12); }
 button {
@@ -119,7 +119,7 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
 .crosshair::before, .crosshair::after { content:""; position:absolute; background:#f4ecd8; opacity:.9; }
 .crosshair::before { width:10px; height:2px; top:4px; }
 .crosshair::after { width:2px; height:10px; left:4px; }
-.round-end { position:absolute; inset:0; display:grid; place-items:center; padding:24px; background:rgba(9,16,13,.72); backdrop-filter:blur(6px); text-align:center; }
+.round-end { position:absolute; inset:0; display:grid; place-items:center; padding:24px; background:rgba(9,16,13,.72); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); text-align:center; }
 .round-end > div { max-width:560px; padding:28px; border:1px solid rgba(244,236,216,.24); border-radius:18px; background:rgba(27,46,38,.92); }
 .round-end h2 { margin:0 0 10px; }
 .round-end p { color:#d8cfb9; line-height:1.5; }
@@ -131,7 +131,7 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
 .joystick { position: absolute; left: 28px; bottom: 28px; width: 112px; height: 112px; border-radius: 50%; border: 2px solid rgba(244,236,216,.3); background: rgba(244,236,216,.06); }
 .joystick-knob { position: absolute; width: 48px; height: 48px; left: 32px; top: 32px; border-radius: 50%; background: rgba(223,180,78,.72); transform: translate(0,0); }
 .touch-actions { position:absolute; right:max(16px, env(safe-area-inset-right)); bottom:max(18px, env(safe-area-inset-bottom)); display:grid; grid-template-columns:repeat(2, 66px); gap:9px; pointer-events:auto; }
-.touch-action { min-height:54px; padding:8px; border-radius:50%; background:rgba(27,46,38,.74); backdrop-filter:blur(4px); font-size:10px; touch-action:none; }
+.touch-action { min-height:54px; padding:8px; border-radius:50%; background:rgba(27,46,38,.74); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); font-size:10px; touch-action:none; }
 .touch-use { grid-row:span 2; min-height:118px; border-radius:28px; background:rgba(223,180,78,.82); color:#1a2d25; border-color:transparent; }
 .touch-action.active { background:rgba(207,106,62,.88); }
 
