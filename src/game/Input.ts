@@ -49,7 +49,9 @@ export class InputManager {
   sample(): InputSnapshot {
     const keyboardForward = (this.keys.has("KeyW") || this.keys.has("ArrowUp") ? 1 : 0) - (this.keys.has("KeyS") || this.keys.has("ArrowDown") ? 1 : 0);
     const keyboardRight = (this.keys.has("KeyD") || this.keys.has("ArrowRight") ? 1 : 0) - (this.keys.has("KeyA") || this.keys.has("ArrowLeft") ? 1 : 0);
-    const forward = Math.max(-1, Math.min(1, keyboardForward - this.moveY));
+    // Game.ts maps negative local forward to the camera's visual forward axis (-Z),
+    // so keyboard/touch intent is inverted here to keep W/up = forward and S/down = back.
+    const forward = Math.max(-1, Math.min(1, -keyboardForward + this.moveY));
     const right = Math.max(-1, Math.min(1, keyboardRight + this.moveX));
     const crouch = this.crouchToggled;
     const snapshot = {
