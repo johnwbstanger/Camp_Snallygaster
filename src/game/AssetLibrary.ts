@@ -20,15 +20,10 @@ type AssetDefinition = {
 // These URLs are intentionally centralized. Every external model used here is
 // redistributable/permissive and documented in docs/ASSET_PROVENANCE.md.
 const ASSETS: Record<AssetKey, AssetDefinition> = {
-  // Quaternius Ultimate Modular Men - CC0. This is the adult counselor model.
   counselor: {
     url: "https://raw.githubusercontent.com/Hhk187/Zomopocalypse/main/Assets/Models/Characters/Ultimate%20Modular%20Men%20Pack-glb/Casual%20Character.glb",
     targetHeight: 1.78,
   },
-  // Quaternius character mesh is used as a robust CDN-safe fallback for campers.
-  // The gameplay camper root is then scaled to 50% in ObjectiveSystem. The
-  // asset layer is deliberately swappable for the CC0 Universal Base Characters
-  // teen model without changing gameplay code.
   camper: {
     url: "https://raw.githubusercontent.com/Hhk187/Zomopocalypse/main/Assets/Models/Characters/Ultimate%20Modular%20Men%20Pack-glb/Beach%20Character.glb",
     targetHeight: 1.55,
@@ -42,8 +37,8 @@ const ASSETS: Record<AssetKey, AssetDefinition> = {
     targetLongestSide: 4.7,
   },
   cabin: {
-    url: "https://cdn.3dassets.dev/assets/35698/v1/model.glb",
-    targetLongestSide: 6.3,
+    url: "https://cdn.3dassets.dev/assets/34212/v1/model.glb",
+    targetLongestSide: 5.4,
   },
   bus: {
     url: "https://cdn.3dassets.dev/assets/34194/v1/model.glb",
@@ -76,7 +71,7 @@ export class AssetLibrary {
     } = {},
   ) {
     const model = await this.clone(key);
-    if (!model || !parent.parent && !(parent instanceof THREE.Scene)) return null;
+    if (!model) return null;
     model.name = options.name ?? `asset:${key}`;
     if (options.position) model.position.fromArray(options.position);
     if (options.rotation) model.rotation.set(...options.rotation);
@@ -107,6 +102,7 @@ export class AssetLibrary {
           const root = gltf.scene;
           root.name = `template:${key}`;
           root.rotation.y += definition.rotateY ?? 0;
+          root.userData.animations = gltf.animations;
           this.normalize(root, definition);
           root.traverse((object) => {
             if (!(object instanceof THREE.Mesh)) return;
