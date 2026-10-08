@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 
-const candidates = String(process.env.LIVE_SERVER_URLS || "https://camp-snallygaster-rebuild.onrender.com,https://camp-snallygaster.onrender.com")
+const candidates = String(process.env.LIVE_SERVER_URLS || "https://camp-snallygaster-rebuild.onrender.com,https://camp-snallygaster.onrender.com,https://camp-snallygaster-extraction--willstanger.replit.app")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
