@@ -9,8 +9,10 @@
     "preview": "vite preview --host 0.0.0.0",
     "start": "tsx server/index.ts",
     "typecheck": "tsc --noEmit",
+    "smoke:movement": "node scripts/movement-contract.mjs",
     "smoke:multiplayer": "node scripts/multiplayer-smoke.mjs",
-    "smoke:production": "node scripts/production-smoke.mjs"
+    "smoke:production": "node scripts/production-smoke.mjs",
+    "smoke:live-lobby": "node scripts/live-lobby-smoke.mjs"
   },
   "dependencies": {
     "cannon-es": "0.20.0",
