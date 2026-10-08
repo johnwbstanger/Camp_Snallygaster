@@ -4,6 +4,8 @@ export type InputSnapshot = {
   lookX: number;
   lookY: number;
   sprint: boolean;
+  interactPressed: boolean;
+  flashlightPressed: boolean;
 };
 
 export class InputManager {
@@ -16,6 +18,9 @@ export class InputManager {
   private lookPointer: number | null = null;
   private lookLastX = 0;
   private lookLastY = 0;
+  private interactPressed = false;
+  private flashlightPressed = false;
+  private touchSprint = false;
   private cleanup: Array<() => void> = [];
   readonly ui: HTMLDivElement;
 
@@ -25,6 +30,11 @@ export class InputManager {
     this.ui.innerHTML = `
       <div class="move-pad" data-move><div class="joystick"><div class="joystick-knob"></div></div></div>
       <div class="look-pad" data-look></div>
+      <div class="touch-actions">
+        <button class="touch-action touch-use" data-use type="button">USE</button>
+        <button class="touch-action" data-run type="button">RUN</button>
+        <button class="touch-action" data-light type="button">LIGHT</button>
+      </div>
     `;
     canvas.parentElement?.appendChild(this.ui);
     this.bindKeyboard();
@@ -42,10 +52,14 @@ export class InputManager {
       right,
       lookX: this.lookX,
       lookY: this.lookY,
-      sprint: this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
+      sprint: this.touchSprint || this.keys.has("ShiftLeft") || this.keys.has("ShiftRight"),
+      interactPressed: this.interactPressed,
+      flashlightPressed: this.flashlightPressed,
     };
     this.lookX = 0;
     this.lookY = 0;
+    this.interactPressed = false;
+    this.flashlightPressed = false;
     return snapshot;
   }
 
@@ -56,7 +70,13 @@ export class InputManager {
   }
 
   private bindKeyboard() {
-    const down = (event: KeyboardEvent) => this.keys.add(event.code);
+    const down = (event: KeyboardEvent) => {
+      if (!this.keys.has(event.code)) {
+        if (event.code === "KeyE") this.interactPressed = true;
+        if (event.code === "KeyF") this.flashlightPressed = true;
+      }
+      this.keys.add(event.code);
+    };
     const up = (event: KeyboardEvent) => this.keys.delete(event.code);
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
@@ -81,6 +101,9 @@ export class InputManager {
     const movePad = this.ui.querySelector<HTMLElement>("[data-move]")!;
     const lookPad = this.ui.querySelector<HTMLElement>("[data-look]")!;
     const knob = this.ui.querySelector<HTMLElement>(".joystick-knob")!;
+    const useButton = this.ui.querySelector<HTMLButtonElement>("[data-use]")!;
+    const runButton = this.ui.querySelector<HTMLButtonElement>("[data-run]")!;
+    const lightButton = this.ui.querySelector<HTMLButtonElement>("[data-light]")!;
 
     const moveStart = (event: PointerEvent) => {
       if (event.pointerType === "mouse" || this.movePointer !== null) return;
@@ -118,6 +141,11 @@ export class InputManager {
       if (event.pointerId === this.lookPointer) this.lookPointer = null;
     };
 
+    const use = (event: PointerEvent) => { event.preventDefault(); this.interactPressed = true; };
+    const light = (event: PointerEvent) => { event.preventDefault(); this.flashlightPressed = true; };
+    const runStart = (event: PointerEvent) => { event.preventDefault(); this.touchSprint = true; runButton.classList.add("active"); };
+    const runEnd = (event: PointerEvent) => { event.preventDefault(); this.touchSprint = false; runButton.classList.remove("active"); };
+
     movePad.addEventListener("pointerdown", moveStart);
     movePad.addEventListener("pointermove", moveMove);
     movePad.addEventListener("pointerup", moveEnd);
@@ -126,6 +154,12 @@ export class InputManager {
     lookPad.addEventListener("pointermove", lookMove);
     lookPad.addEventListener("pointerup", lookEnd);
     lookPad.addEventListener("pointercancel", lookEnd);
+    useButton.addEventListener("pointerdown", use);
+    lightButton.addEventListener("pointerdown", light);
+    runButton.addEventListener("pointerdown", runStart);
+    runButton.addEventListener("pointerup", runEnd);
+    runButton.addEventListener("pointercancel", runEnd);
+    runButton.addEventListener("pointerleave", runEnd);
 
     this.cleanup.push(
       () => movePad.removeEventListener("pointerdown", moveStart),
@@ -136,6 +170,12 @@ export class InputManager {
       () => lookPad.removeEventListener("pointermove", lookMove),
       () => lookPad.removeEventListener("pointerup", lookEnd),
       () => lookPad.removeEventListener("pointercancel", lookEnd),
+      () => useButton.removeEventListener("pointerdown", use),
+      () => lightButton.removeEventListener("pointerdown", light),
+      () => runButton.removeEventListener("pointerdown", runStart),
+      () => runButton.removeEventListener("pointerup", runEnd),
+      () => runButton.removeEventListener("pointercancel", runEnd),
+      () => runButton.removeEventListener("pointerleave", runEnd),
     );
   }
 
