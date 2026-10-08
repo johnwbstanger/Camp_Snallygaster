@@ -32,3 +32,35 @@ jobs:
         run: npm run smoke:multiplayer
       - name: Verify production HTTP assets and WebSocket endpoint
         run: npm run smoke:production
+      - name: Verify public Replit backend health
+        run: |
+          node -e 'const base="https://camp-snallygaster-extraction--willstanger.replit.app"; fetch(base+"/healthz", {signal: AbortSignal.timeout(20000)}).then(async r=>{if(!r.ok) throw new Error(`healthz ${r.status}`); const body=await r.json(); if(body.maxPlayers!==15) throw new Error(`maxPlayers ${body.maxPlayers}`); console.log("PUBLIC HEALTH PASS", body)}).catch(e=>{console.error(e); process.exit(1)})'
+      - name: Verify public Replit WSS create-room handshake
+        run: |
+          node --input-type=module - <<'NODE'
+          import WebSocket from 'ws';
+          const wsUrl = 'wss://camp-snallygaster-extraction--willstanger.replit.app/ws';
+          const socket = new WebSocket(wsUrl);
+          const timer = setTimeout(() => {
+            console.error('public WSS handshake timed out');
+            try { socket.close(); } catch {}
+            process.exit(1);
+          }, 20000);
+          socket.on('open', () => socket.send(JSON.stringify({ type: 'create', name: 'CI Public Probe' })));
+          socket.on('message', raw => {
+            const message = JSON.parse(raw.toString());
+            if (message.type !== 'welcome') return;
+            if (!message.roomCode || !message.playerId || !message.hostId || message.maxPlayers !== 15) {
+              console.error('invalid welcome payload', message);
+              process.exit(1);
+            }
+            clearTimeout(timer);
+            console.log('PUBLIC WSS PASS', message.roomCode);
+            socket.close();
+          });
+          socket.on('error', error => {
+            clearTimeout(timer);
+            console.error(error);
+            process.exit(1);
+          });
+          NODE

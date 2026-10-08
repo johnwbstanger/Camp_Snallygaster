@@ -29,7 +29,7 @@ jobs:
 
       - name: Build browser client
         env:
-          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-rebuild.onrender.com' }}
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-extraction--willstanger.replit.app' }}
         run: npm run build
 
       - name: Verify compiled output
@@ -38,6 +38,45 @@ jobs:
           grep -q "assets/" dist/client/index.html
           ! grep -q "/src/main.ts" dist/client/index.html
           ! grep -q "/src/style.css" dist/client/index.html
+
+      - name: Verify public backend health
+        env:
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-extraction--willstanger.replit.app' }}
+        run: |
+          node -e 'const base=process.env.VITE_SERVER_URL.replace(/\/$/,""); fetch(base+"/healthz", {signal: AbortSignal.timeout(20000)}).then(async r=>{if(!r.ok) throw new Error(`healthz ${r.status}`); const body=await r.json(); if(body.maxPlayers!==15) throw new Error(`maxPlayers ${body.maxPlayers}`); console.log("PUBLIC HEALTH PASS", body)}).catch(e=>{console.error(e); process.exit(1)})'
+
+      - name: Verify public WSS create-room handshake
+        env:
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-extraction--willstanger.replit.app' }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import WebSocket from 'ws';
+          const base = process.env.VITE_SERVER_URL.replace(/\/$/, '');
+          const wsUrl = base.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/ws';
+          const socket = new WebSocket(wsUrl);
+          const timer = setTimeout(() => {
+            console.error('public WSS handshake timed out');
+            try { socket.close(); } catch {}
+            process.exit(1);
+          }, 20000);
+          socket.on('open', () => socket.send(JSON.stringify({ type: 'create', name: 'Deploy Probe' })));
+          socket.on('message', raw => {
+            const message = JSON.parse(raw.toString());
+            if (message.type !== 'welcome') return;
+            if (!message.roomCode || !message.playerId || !message.hostId || message.maxPlayers !== 15) {
+              console.error('invalid welcome payload', message);
+              process.exit(1);
+            }
+            clearTimeout(timer);
+            console.log('PUBLIC WSS PASS', message.roomCode);
+            socket.close();
+          });
+          socket.on('error', error => {
+            clearTimeout(timer);
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
 
       - name: Publish compiled files to gh-pages branch
         env:
