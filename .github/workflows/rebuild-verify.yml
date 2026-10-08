@@ -23,6 +23,8 @@ jobs:
         run: node scripts/collision-contract.mjs
       - name: Verify Snallygaster line-of-sight and disengage contract
         run: npx tsx scripts/snallygaster-contract.ts
+      - name: Verify randomized monster library contract
+        run: npx tsx scripts/monster-library-contract.ts
       - name: Verify clothed camper character contract
         run: node scripts/camper-character-contract.mjs
       - run: npm run build
