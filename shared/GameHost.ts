@@ -1,6 +1,8 @@
-import type { CamperState, RoundAward, RoundResults, ClientMessage, DoorState, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "./protocol.js";
+import type { CamperState, RoundAward, RoundResults, NoiseMessage, ClientMessage, DoorState, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "./protocol.js";
 import { hasCampLineOfSight, MONSTER_HOME } from "./campVision.js";
-import { chooseRandomMonster, getMonsterDefinition } from "./monsterLibrary.js";
+import { chooseRandomMonster } from "./monsterLibrary.js";
+import { MonsterBrain, type NoiseEvent, type SensePlayer } from "./monsterAI.js";
+import { doorPosition } from "./campNav.js";
 
 export const MAX_PLAYERS = 15;
 
@@ -28,7 +30,7 @@ export const BUS_POSITION = { x: 0, z: 31 };
 const BUS_BOARD_RADIUS = 10;
 const BUS_START_RADIUS = 9;
 const EXTRACTION_SECONDS = 12;
-const MONSTER_COOLDOWN_SECONDS = 9;
+const MAX_NOISE_LOUDNESS = 120;
 
 type PlayerStats = { deaths: number; noise: number; throws: number; lootValue: number; campersDropped: number; secrets: number };
 
@@ -54,7 +56,9 @@ export class GameHost {
   round: SharedRoundState = createRoundState("LOBBY");
   private poseDirty = false;
   private stats = new Map<string, PlayerStats>();
-  private monsterCooldown = 0;
+  private brain = new MonsterBrain("snallygaster");
+  private noiseBudget = new Map<string, { windowStart: number; count: number }>();
+  private clock = 0;
 
   constructor(readonly code: string, private readonly sendTo: HostSend) {}
 
@@ -96,7 +100,7 @@ export class GameHost {
       if (this.round.phase !== "LOBBY") return;
       this.round = createRoundState("ACTIVE");
       this.resetStats();
-      this.monsterCooldown = 0;
+      this.brain = new MonsterBrain(this.round.monster.kind);
       this.broadcast({ type: "start" });
       this.broadcastRound();
       return;
@@ -117,6 +121,19 @@ export class GameHost {
       return;
     }
 
+    if (message.type === "noise") {
+      if (this.round.phase !== "ACTIVE" || this.round.downed.includes(clientId)) return;
+      this.handleNoise(clientId, message);
+      return;
+    }
+
+    if (message.type === "props") {
+      if (this.round.phase !== "ACTIVE") return;
+      const props = message.props.slice(0, 24).filter((prop) => typeof prop.id === "string" && prop.id.length < 40 && prop.p.every(Number.isFinite) && prop.q.every(Number.isFinite));
+      if (props.length) this.broadcastExcept(clientId, { type: "props", by: clientId, props });
+      return;
+    }
+
     if (message.type === "interact") {
       if (this.round.phase !== "ACTIVE") return;
       this.handleInteract(clientId, message.targetId);
@@ -128,6 +145,7 @@ export class GameHost {
   }
 
   tick(dt: number) {
+    this.clock += dt;
     if (this.round.phase === "ACTIVE") this.updateRound(dt);
     if (this.poseDirty) {
       this.poseDirty = false;
@@ -165,7 +183,7 @@ export class GameHost {
       if (!definition || !door) return;
       if (distance2D(player.pose, definition) > 4.0) return;
       door.open = !door.open;
-      if (!door.open && this.round.monster.awake && !this.nearestVisiblePlayer()) this.disengageMonster();
+      this.emitNoise({ x: definition.x, z: definition.z, loudness: 14, material: "wood", source: "door" }, playerId);
       return;
     }
 
@@ -179,9 +197,8 @@ export class GameHost {
     if (nearest && nearestDistance <= 2.8) {
       nearest.state = "FOLLOWING";
       nearest.followingPlayerId = playerId;
-      const monster = this.round.monster;
-      monster.awake = true;
-      monster.x = MONSTER_HOME.x; monster.y = MONSTER_HOME.y; monster.z = MONSTER_HOME.z;
+      this.brain.wakeAt(nearest.position, this.round.doors);
+      this.syncMonster();
       this.round.campersFound = this.round.campers.filter((camper) => camper.state !== "HIDDEN").length;
     }
   }
@@ -190,10 +207,8 @@ export class GameHost {
     const round = this.round;
     if (round.extraction.active || round.phase !== "ACTIVE") return;
     round.extraction = { active: true, remaining: EXTRACTION_SECONDS };
-    if (!round.monster.awake && this.monsterCooldown <= 0) {
-      round.monster.awake = true;
-      round.monster.x = MONSTER_HOME.x; round.monster.y = MONSTER_HOME.y; round.monster.z = MONSTER_HOME.z;
-    }
+    this.brain.wakeAt(BUS_POSITION, round.doors);
+    this.syncMonster();
   }
 
   private dropFollowers(playerId: string) {
@@ -214,7 +229,6 @@ export class GameHost {
   private updateRound(dt: number) {
     const round = this.round;
     round.elapsed += dt;
-    if (this.monsterCooldown > 0) this.monsterCooldown = Math.max(0, this.monsterCooldown - dt);
     for (const camper of round.campers) {
       if (camper.state !== "FOLLOWING" || !camper.followingPlayerId) continue;
       const player = this.players.get(camper.followingPlayerId);
@@ -243,17 +257,26 @@ export class GameHost {
 
     if (round.campersSafe === round.campers.length && !round.extraction.active) this.beginExtraction();
 
-    if (round.monster.awake && this.players.size > 0) {
-      const target = this.nearestVisiblePlayer();
-      if (!target) {
-        this.disengageMonster();
-      } else {
-        const definition = getMonsterDefinition(round.monster.kind);
-        const distance = distance2D(target.pose, round.monster);
-        const speed = definition.baseSpeed + round.campersFound * definition.speedPerCamper;
-        moveToward(round.monster, target.pose.x, target.pose.z, speed * dt);
-        if (distance < definition.catchDistance) this.downPlayer(target);
+    if (this.players.size > 0) {
+      const sensed: SensePlayer[] = this.alivePlayers().map((player) => ({
+        id: player.id, x: player.pose.x, z: player.pose.z,
+        crouch: Boolean(player.pose.crouch), sprint: Boolean(player.pose.sprint), flashlight: Boolean(player.pose.flashlight),
+      }));
+      const pressure = Math.min(1, round.elapsed / 420 + round.campersFound * 0.07 + (round.extraction.active ? 0.3 : 0));
+      const events = this.brain.update(dt, { players: sensed, doors: round.doors, pressure, random: Math.random });
+      for (const doorId of events.openDoors) {
+        const door = round.doors.find((candidate) => candidate.id === doorId);
+        const position = doorPosition(doorId);
+        if (door && !door.open && position) {
+          door.open = true;
+          this.emitNoise({ x: position.x, z: position.z, loudness: 22, material: "wood", source: "door-smash" }, "monster");
+        }
       }
+      if (events.attack) {
+        const victim = this.players.get(events.attack);
+        if (victim) this.downPlayer(victim);
+      }
+      this.syncMonster();
     }
 
     if (round.phase === "ACTIVE" && this.alivePlayers().length === 0 && this.players.size > 0) {
@@ -272,8 +295,40 @@ export class GameHost {
     const stats = this.stats.get(player.id);
     if (stats) stats.deaths += 1;
     this.dropFollowers(player.id);
-    this.disengageMonster();
-    this.monsterCooldown = MONSTER_COOLDOWN_SECONDS;
+  }
+
+  private handleNoise(clientId: string, message: NoiseMessage) {
+    const budget = this.noiseBudget.get(clientId) ?? { windowStart: this.clock, count: 0 };
+    if (this.clock - budget.windowStart > 1) { budget.windowStart = this.clock; budget.count = 0; }
+    budget.count += 1;
+    this.noiseBudget.set(clientId, budget);
+    if (budget.count > 12) return;
+    const finite = (value: number) => (Number.isFinite(value) ? value : 0);
+    const loudness = Math.max(0, Math.min(MAX_NOISE_LOUDNESS, finite(message.loudness)));
+    const source = String(message.source || "noise").slice(0, 16);
+    const stats = this.stats.get(clientId);
+    if (stats) {
+      if (source !== "step") stats.noise += loudness;
+      if (source === "throw") stats.throws += 1;
+    }
+    if (loudness < 1) return;
+    this.emitNoise({
+      x: Math.max(-75, Math.min(75, finite(message.x))), z: Math.max(-75, Math.min(75, finite(message.z))),
+      loudness, material: String(message.material || "generic").slice(0, 12), source,
+    }, clientId);
+  }
+
+  private emitNoise(noise: NoiseEvent, by: string) {
+    this.brain.hear(noise, this.round.doors);
+    this.syncMonster();
+    this.broadcast({ type: "noise", by, ...noise });
+  }
+
+  private syncMonster() {
+    const monster = this.round.monster;
+    monster.x = this.brain.x; monster.y = 0; monster.z = this.brain.z;
+    monster.awake = this.brain.awake;
+    monster.state = this.brain.state;
   }
 
   private finishRound(departed: boolean) {
@@ -358,7 +413,7 @@ export class GameHost {
   private resetToLobby() {
     this.round = createRoundState("LOBBY");
     this.resetStats();
-    this.monsterCooldown = 0;
+    this.brain = new MonsterBrain(this.round.monster.kind);
     let slot = 0;
     for (const player of this.players.values()) {
       const angle = (slot++ / MAX_PLAYERS) * Math.PI * 2;
@@ -369,21 +424,11 @@ export class GameHost {
     this.broadcastRound();
   }
 
-  private nearestVisiblePlayer() {
-    let target: PlayerState | null = null;
-    let best = Infinity;
-    for (const player of this.players.values()) {
-      if (this.round.downed.includes(player.id)) continue;
-      if (!hasCampLineOfSight(this.round.monster, player.pose, this.round.doors)) continue;
-      const distance = distance2D(player.pose, this.round.monster);
-      if (distance < best) { best = distance; target = player; }
-    }
-    return target;
-  }
-
   private disengageMonster() {
     const monster = this.round.monster;
+    this.brain.reset(monster.kind);
     monster.awake = false;
+    monster.state = "IDLE";
     monster.x = MONSTER_HOME.x; monster.y = MONSTER_HOME.y; monster.z = MONSTER_HOME.z;
   }
 
@@ -392,6 +437,10 @@ export class GameHost {
   }
 
   private broadcastRound() { this.broadcast({ type: "round", state: this.round }); }
+
+  private broadcastExcept(excluded: string, message: ServerMessage) {
+    for (const id of this.players.keys()) if (id !== excluded) this.sendTo(id, message);
+  }
 
   private broadcast(message: ServerMessage) {
     for (const id of this.players.keys()) this.sendTo(id, message);
@@ -406,7 +455,7 @@ export function createRoundState(phase: SharedRoundState["phase"]): SharedRoundS
       id: `camper-${index + 1}`, name, state: "HIDDEN", followingPlayerId: null, position: { x, y, z },
     })),
     doors: DOORS.map(({ id }): DoorState => ({ id, open: false })),
-    monster: { kind: selected.id, x: MONSTER_HOME.x, y: MONSTER_HOME.y, z: MONSTER_HOME.z, awake: false },
+    monster: { kind: selected.id, x: MONSTER_HOME.x, y: MONSTER_HOME.y, z: MONSTER_HOME.z, awake: false, state: "IDLE" },
     campersSafe: 0,
     campersFound: 0,
     elapsed: 0,
@@ -423,6 +472,9 @@ export function sanitizePose(pose: PlayerPose): PlayerPose {
     y: Math.max(-5, Math.min(20, finite(pose.y, 1.4))),
     z: Math.max(-75, Math.min(75, finite(pose.z))),
     yaw: finite(pose.yaw),
+    flashlight: pose.flashlight === true,
+    crouch: pose.crouch === true,
+    sprint: pose.sprint === true,
   };
 }
 

@@ -83,7 +83,13 @@ wss.on("connection", (socket) => {
   socket.on("error", () => leaveCurrentRoom(socket));
 });
 
-const tick = setInterval(() => { for (const room of rooms.values()) room.host.tick(0.1); }, 100);
+let lastTick = Date.now();
+const tick = setInterval(() => {
+  const now = Date.now();
+  const dt = Math.min(0.25, Math.max(0.02, (now - lastTick) / 1000));
+  lastTick = now;
+  for (const room of rooms.values()) room.host.tick(dt);
+}, 100);
 tick.unref();
 
 server.listen(PORT, "0.0.0.0", () => {

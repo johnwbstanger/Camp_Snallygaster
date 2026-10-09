@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
-import type { PlayerPose, PlayerState, SharedRoundState } from "../../shared/protocol";
+import type { NoiseMessage, PlayerPose, PlayerState, PropTransform, SharedRoundState } from "../../shared/protocol";
+import { Sfx } from "../audio/Sfx";
 import type { ProximityVoice } from "../voice/ProximityVoice";
 import { assetLibrary } from "./AssetLibrary";
 import { installCampCollisionGuard } from "./CollisionMap";
@@ -17,6 +18,18 @@ const SPRINT_MULTIPLIER = 1.75;
 const SPRINT_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * SPRINT_MULTIPLIER; // 31.696875
 const CROUCH_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * 0.5;
 const PLAYER_RADIUS = 0.38;
+const THREAT_TEXT: Record<string, string> = {
+  IDLE: "THE WOODS ARE QUIET",
+  ROAM: "SOMETHING IS MOVING IN THE TREES",
+  HEAR: "IT HEARD SOMETHING",
+  INVESTIGATE: "IT'S INVESTIGATING A NOISE",
+  SUSPICIOUS: "IT'S LOOKING RIGHT AT YOU… DON'T MOVE",
+  SPOT: "IT SEES YOU",
+  CHASE: "RUN!",
+  ATTACK: "RUN!",
+  SEARCH: "IT'S HUNTING FOR YOU",
+  COOLDOWN: "IT RETREATS INTO THE DARK",
+};
 
 export class Game {
   private renderer!: THREE.WebGLRenderer;
@@ -42,6 +55,13 @@ export class Game {
   private sharedRound: SharedRoundState | null = null;
   private lobbyListener: (() => void) | null = null;
   private isHost = false;
+  private sfx = new Sfx();
+  private noiseListener: ((noise: NoiseMessage) => void) | null = null;
+  private propsListener: ((props: PropTransform[]) => void) | null = null;
+  private lastStepNoise = 0;
+  private lastVoiceNoise = 0;
+  private lastPropSend = 0;
+  private lastMonsterState = "IDLE";
   private localPlayerId: string | null = null;
   private resultsShown = false;
   private remotePlayers = new Map<string, THREE.Group>();
@@ -74,6 +94,10 @@ export class Game {
     addHighFidelitySetDressing(this.world.scene, this.mobile);
     this.objectives = new ObjectiveSystem(this.world.scene, this.mobile);
     this.props = new PhysicalProps(this.world.scene, this.physics, this.mobile);
+    this.props.onNoise((noise) => {
+      if (this.networked) this.noiseListener?.(noise);
+      else this.sfx.impact(noise.material, noise.loudness, noise, this.player.position);
+    });
     this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 190);
     this.camera.rotation.order = "YXZ";
 
@@ -100,6 +124,7 @@ export class Game {
       </div>
       <div class="control-help">WASD MOVE · HOLD SHIFT SPRINT · CTRL CROUCH · SPACE JUMP · E INTERACT · LMB USE · G DROP · RMB SCAN · ESC MENU</div>
       <div id="micHud" class="mic-hud">🎙 …</div>
+      <div id="heldText" class="held-text"></div>
       <div id="promptText" class="game-prompt"></div>
       <div class="crosshair"></div>
       <div id="countdownText" class="countdown hidden"></div>
@@ -113,6 +138,7 @@ export class Game {
     installCampCollisionGuard(this.physics, PLAYER_RADIUS);
     this.createFlashlight();
     this.resize();
+    this.sfx.startAmbience();
 
     addEventListener("resize", this.resizeHandler, { passive: true });
     document.addEventListener("visibilitychange", this.visibilityHandler);
@@ -139,6 +165,13 @@ export class Game {
 
   setVoice(voice: ProximityVoice | null) { this.voice = voice; }
   onPose(callback: (pose: PlayerPose) => void) { this.poseListener = callback; }
+  onNoise(callback: (noise: NoiseMessage) => void) { this.noiseListener = callback; }
+  onProps(callback: (props: PropTransform[]) => void) { this.propsListener = callback; }
+  receiveNoise(noise: NoiseMessage & { by: string }) {
+    if (noise.source === "step" || noise.source === "voice") return;
+    this.sfx.impact(noise.material, noise.loudness, noise, this.player.position);
+  }
+  receiveProps(props: PropTransform[]) { this.props?.applyRemote(props); }
   onReturnToLobby(callback: () => void) { this.lobbyListener = callback; }
   setIsHost(value: boolean) { this.isHost = value; }
   onInteract(callback: (targetId?: string) => void) { this.interactListener = callback; }
@@ -224,6 +257,7 @@ export class Game {
     this.pause();
     removeEventListener("resize", this.resizeHandler);
     document.removeEventListener("visibilitychange", this.visibilityHandler);
+    this.sfx.stop();
     this.input?.destroy();
     this.objectives?.destroy();
     this.renderer?.dispose();
@@ -362,7 +396,9 @@ export class Game {
       this.interactListener?.();
     }
 
-    if (input.dropPressed) this.props.dropHeld();
+    if (input.usePressed && this.props.isHolding) this.props.throwHeld(this.camera);
+    else if (input.dropPressed) this.props.dropHeld();
+    if (this.networked) this.emitNetworkEvents(now, moving, sprinting, input.crouch);
 
     const playerPosition = new THREE.Vector3(p.x, p.y, p.z);
     const objective = this.networked
@@ -379,11 +415,29 @@ export class Game {
 
     if (this.poseListener && now - this.lastPoseEmit >= 70) {
       this.lastPoseEmit = now;
-      this.poseListener({ x: p.x, y: p.y, z: p.z, yaw: this.yaw });
+      this.poseListener({ x: p.x, y: p.y, z: p.z, yaw: this.yaw, flashlight: this.flashlightOn, crouch: input.crouch, sprint: sprinting });
     }
 
     this.renderer.render(this.world.scene, this.camera);
     this.frameId = requestAnimationFrame((time) => this.loop(time));
+  }
+
+  private emitNetworkEvents(now: number, moving: boolean, sprinting: boolean, crouching: boolean) {
+    const p = this.player.position;
+    if (moving && !crouching && now - this.lastStepNoise > 600) {
+      this.lastStepNoise = now;
+      this.noiseListener?.({ x: p.x, z: p.z, loudness: sprinting ? 15 : 6, material: "grass", source: "step" });
+    }
+    const level = this.voice?.localLevel ?? 0;
+    if (level > 0.1 && now - this.lastVoiceNoise > 900) {
+      this.lastVoiceNoise = now;
+      this.noiseListener?.({ x: p.x, z: p.z, loudness: Math.min(48, 10 + level * 90), material: "voice", source: "voice" });
+    }
+    if (now - this.lastPropSend > 100) {
+      this.lastPropSend = now;
+      const outgoing = this.props.collectOutgoing();
+      if (outgoing.length) this.propsListener?.(outgoing);
+    }
   }
 
   private updateInteraction() {
@@ -419,7 +473,15 @@ export class Game {
     const threat = this.mount.querySelector<HTMLElement>("#threatText");
     if (objective) objective.textContent = `CAMPERS SAFE ${safe} / ${total}`;
     if (promptElement) promptElement.textContent = prompt;
-    if (threat) threat.textContent = monsterAwake ? "SOMETHING IS MOVING IN THE TREES" : "THE WOODS ARE QUIET";
+    const state = this.sharedRound?.monster.state ?? (monsterAwake ? "ROAM" : "IDLE");
+    if (state === "SPOT" && this.lastMonsterState !== "SPOT") this.sfx.stinger();
+    this.lastMonsterState = state;
+    if (threat) {
+      threat.textContent = THREAT_TEXT[state] ?? "THE WOODS ARE QUIET";
+      threat.dataset.level = state;
+    }
+    const heldElement = this.mount.querySelector<HTMLElement>("#heldText");
+    if (heldElement) heldElement.textContent = this.props.heldLabel ? `HOLDING ${this.props.heldLabel} · LMB THROW · G DROP` : "";
   }
 
   private updateNetworkedOverlays() {

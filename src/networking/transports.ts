@@ -117,7 +117,13 @@ export class PeerHostTransport implements ClientTransport {
       if (clientId === this.localId) queueMicrotask(() => this.handlers.onMessage(message));
       else this.conns.get(clientId)?.send(message);
     });
-    this.timer = window.setInterval(() => this.host.tick(0.1), 100);
+    let last = performance.now();
+    this.timer = window.setInterval(() => {
+      const now = performance.now();
+      const dt = Math.min(0.25, Math.max(0.02, (now - last) / 1000));
+      last = now;
+      this.host.tick(dt);
+    }, 100);
 
     peer.on("connection", (conn) => this.accept(conn));
   }

@@ -110,7 +110,7 @@ let paused = false;
 const voice = new ProximityVoice();
 voice.onStatus(renderVoiceStatus);
 let voiceSession = false;
-if (new URLSearchParams(location.search).has("debug")) (window as unknown as { __snally: unknown }).__snally = { voice };
+if (new URLSearchParams(location.search).has("debug")) (window as unknown as { __snally: unknown }).__snally = { voice, round: () => latestRound, mp: () => multiplayer, game: () => game };
 
 function playerName() {
   return nameInput.value.trim().slice(0, 18) || "Counselor";
@@ -133,6 +133,8 @@ async function launchGame(networked: boolean) {
       game.setRemotePlayers(room.players, room.playerId);
       game.onPose((pose) => multiplayer?.sendPose(pose));
       game.onInteract((targetId) => multiplayer?.interact(targetId));
+      game.onNoise((noise) => multiplayer?.sendNoise(noise));
+      game.onProps((props) => multiplayer?.sendProps(props));
       game.onReturnToLobby(() => multiplayer?.resetToLobby());
       game.setIsHost(room.hostId === room.playerId);
       game.setVoice(voice);
@@ -194,6 +196,8 @@ function ensureMultiplayer() {
   });
   multiplayer.onStart(() => void launchGame(true));
   multiplayer.onLobby(() => returnToLobby());
+  multiplayer.onNoise((noise) => game?.receiveNoise(noise));
+  multiplayer.onProps((_by, props) => game?.receiveProps(props));
   multiplayer.onError((message) => {
     status.textContent = message;
     lobbyStatus.textContent = message;

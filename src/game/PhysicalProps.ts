@@ -9,12 +9,33 @@ type PhysicalProp = {
   kind: PropKind;
   root: THREE.Group;
   body: CANNON.Body;
+  mass?: number;
+  ownedUntil?: number;
+  remoteUntil?: number;
+  remoteTarget?: THREE.Vector3;
+  remoteQuat?: THREE.Quaternion;
+  lastImpact?: number;
 };
+
+export type PropNoise = { x: number; z: number; loudness: number; material: string; source: string };
+export type PropTransformMessage = { id: string; p: [number, number, number]; q: [number, number, number, number] };
+
+const KIND_MATERIAL: Record<PropKind, { material: string; loudness: number }> = {
+  cooler: { material: "plastic", loudness: 34 },
+  box: { material: "cardboard", loudness: 20 },
+  basketball: { material: "rubber", loudness: 26 },
+  barrel: { material: "metal", loudness: 48 },
+};
+
+const THROW_SPEED = 19;
+const OWN_SECONDS = 4;
 
 export class PhysicalProps {
   readonly interactables: THREE.Object3D[] = [];
   private readonly props = new Map<string, PhysicalProp>();
   private heldId: string | null = null;
+  private clock = 0;
+  private noiseListener: ((noise: PropNoise) => void) | null = null;
 
   constructor(private scene: THREE.Scene, private physics: CANNON.World, private mobile: boolean) {
     this.addCooler("prop:cooler-red", "RED COOLER", -12, 0.65, 18.5, 0xb83e32);
@@ -25,6 +46,59 @@ export class PhysicalProps {
     this.addBasketball("prop:basketball-2", "BASKETBALL", 5.1, 0.8, 15.2);
     this.addBarrel("prop:barrel-1", "UTILITY BARREL", 35, 0.8, -34);
     this.addBarrel("prop:barrel-2", "UTILITY BARREL", 36.1, 0.8, -34.4);
+  }
+
+  onNoise(callback: (noise: PropNoise) => void) { this.noiseListener = callback; }
+
+  get heldLabel() { return this.heldId ? this.props.get(this.heldId)?.label ?? null : null; }
+  get isHolding() { return this.heldId !== null; }
+
+  /** Launches the held prop along the view direction and reports a throw noise. */
+  throwHeld(camera: THREE.Camera) {
+    if (!this.heldId) return false;
+    const held = this.props.get(this.heldId);
+    this.heldId = null;
+    if (!held) return false;
+    const direction = new THREE.Vector3();
+    camera.getWorldDirection(direction);
+    const mass = held.mass ?? held.body.mass;
+    const speed = THROW_SPEED * Math.min(1, 1.6 / Math.sqrt(Math.max(mass, 0.5)) + 0.35);
+    held.body.wakeUp();
+    held.body.velocity.set(direction.x * speed, direction.y * speed + 2.5, direction.z * speed);
+    held.body.angularVelocity.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+    held.ownedUntil = this.clock + OWN_SECONDS;
+    held.lastImpact = this.clock + 0.15;
+    this.noiseListener?.({ x: held.body.position.x, z: held.body.position.z, loudness: 6, material: "air", source: "throw" });
+    return true;
+  }
+
+  /** Transforms for props this client is simulating (held, thrown, or still moving). */
+  collectOutgoing(): PropTransformMessage[] {
+    const out: PropTransformMessage[] = [];
+    for (const prop of this.props.values()) {
+      const owned = this.heldId === prop.id || (prop.ownedUntil !== undefined && prop.ownedUntil > this.clock);
+      if (!owned) continue;
+      const { position: p, quaternion: q } = prop.body;
+      out.push({ id: prop.id, p: [round(p.x), round(p.y), round(p.z)], q: [round(q.x), round(q.y), round(q.z), round(q.w)] });
+    }
+    return out;
+  }
+
+  applyRemote(transforms: PropTransformMessage[]) {
+    for (const transform of transforms) {
+      const prop = this.props.get(transform.id);
+      if (!prop || this.heldId === transform.id) continue;
+      if (prop.remoteUntil === undefined || prop.remoteUntil < this.clock) {
+        prop.mass = prop.body.mass;
+        prop.body.mass = 0;
+        prop.body.type = CANNON.Body.KINEMATIC;
+        prop.body.updateMassProperties();
+      }
+      prop.remoteUntil = this.clock + 0.7;
+      prop.ownedUntil = undefined;
+      prop.remoteTarget = new THREE.Vector3(...transform.p);
+      prop.remoteQuat = new THREE.Quaternion(...transform.q);
+    }
   }
 
   isProp(id: string | null) {
@@ -40,6 +114,8 @@ export class PhysicalProps {
   toggleHold(id: string) {
     if (!this.props.has(id)) return false;
     if (this.heldId === id) return this.dropHeld();
+    const target = this.props.get(id);
+    if (target && target.remoteUntil !== undefined && target.remoteUntil > this.clock) return false;
     this.heldId = id;
     this.props.get(id)?.body.wakeUp();
     return true;
@@ -50,10 +126,29 @@ export class PhysicalProps {
     const held = this.props.get(this.heldId);
     this.heldId = null;
     held?.body.wakeUp();
+    if (held) held.ownedUntil = this.clock + OWN_SECONDS;
     return true;
   }
 
   update(camera: THREE.Camera, dt: number) {
+    this.clock += dt;
+    for (const prop of this.props.values()) {
+      if (prop.remoteUntil === undefined) continue;
+      if (prop.remoteUntil < this.clock) {
+        prop.remoteUntil = undefined;
+        prop.body.type = CANNON.Body.DYNAMIC;
+        prop.body.mass = prop.mass ?? 1;
+        prop.body.updateMassProperties();
+        prop.body.velocity.setZero();
+        prop.body.wakeUp();
+      } else if (prop.remoteTarget && prop.remoteQuat) {
+        const b = prop.body;
+        b.velocity.set((prop.remoteTarget.x - b.position.x) * 12, (prop.remoteTarget.y - b.position.y) * 12, (prop.remoteTarget.z - b.position.z) * 12);
+        const q = new THREE.Quaternion(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w).slerp(prop.remoteQuat, 0.35);
+        b.quaternion.set(q.x, q.y, q.z, q.w);
+        b.wakeUp();
+      }
+    }
     if (this.heldId) {
       const held = this.props.get(this.heldId);
       if (held) {
@@ -91,6 +186,16 @@ export class PhysicalProps {
     pickTarget.userData.prompt = `PICK UP ${prop.label}`;
     this.interactables.push(pickTarget);
     this.props.set(prop.id, prop);
+    prop.mass = prop.body.mass;
+    prop.body.addEventListener("collide", (event: { contact: CANNON.ContactEquation }) => {
+      const owned = this.heldId === prop.id || (prop.ownedUntil !== undefined && prop.ownedUntil > this.clock);
+      if (!owned || (prop.lastImpact ?? 0) > this.clock) return;
+      const speed = Math.abs(event.contact.getImpactVelocityAlongNormal());
+      if (speed < 2.4) return;
+      prop.lastImpact = this.clock + 0.35;
+      const info = KIND_MATERIAL[prop.kind];
+      this.noiseListener?.({ x: prop.body.position.x, z: prop.body.position.z, loudness: info.loudness * Math.min(1.7, speed / 7), material: info.material, source: "impact" });
+    });
     this.scene.add(prop.root);
     this.physics.addBody(prop.body);
   }
@@ -170,3 +275,5 @@ export class PhysicalProps {
     this.register({ id, label, kind: "barrel", root, body }, barrel);
   }
 }
+
+function round(value: number) { return Math.round(value * 1000) / 1000; }

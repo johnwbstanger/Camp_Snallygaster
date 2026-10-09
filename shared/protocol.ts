@@ -1,11 +1,18 @@
 import type { MonsterKind } from "./monsterLibrary";
+import type { MonsterState } from "./monsterAI";
 
 export type PlayerPose = {
   x: number;
   y: number;
   z: number;
   yaw: number;
+  flashlight?: boolean;
+  crouch?: boolean;
+  sprint?: boolean;
 };
+
+export type NoiseMessage = { x: number; z: number; loudness: number; material: string; source: string };
+export type PropTransform = { id: string; p: [number, number, number]; q: [number, number, number, number] };
 
 export type PlayerState = {
   id: string;
@@ -50,7 +57,7 @@ export type SharedRoundState = {
   results: RoundResults | null;
   campers: CamperState[];
   doors: DoorState[];
-  monster: { kind: MonsterKind; x: number; y: number; z: number; awake: boolean };
+  monster: { kind: MonsterKind; x: number; y: number; z: number; awake: boolean; state: MonsterState };
   campersSafe: number;
   campersFound: number;
 };
@@ -61,6 +68,8 @@ export type ClientMessage =
   | { type: "start" }
   | { type: "reset" }
   | { type: "move"; pose: PlayerPose }
+  | ({ type: "noise" } & NoiseMessage)
+  | { type: "props"; props: PropTransform[] }
   | { type: "interact"; targetId?: string }
   | { type: "ping"; at: number };
 
@@ -71,5 +80,7 @@ export type ServerMessage =
   | { type: "round"; state: SharedRoundState }
   | { type: "start" }
   | { type: "lobby" }
+  | ({ type: "noise"; by: string } & NoiseMessage)
+  | { type: "props"; by: string; props: PropTransform[] }
   | { type: "pong"; at: number }
   | { type: "error"; message: string };
