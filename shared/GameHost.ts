@@ -1,4 +1,4 @@
-import type { CamperState, ClientMessage, DoorState, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "./protocol.js";
+import type { CamperState, RoundAward, RoundResults, ClientMessage, DoorState, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "./protocol.js";
 import { hasCampLineOfSight, MONSTER_HOME } from "./campVision.js";
 import { chooseRandomMonster, getMonsterDefinition } from "./monsterLibrary.js";
 
@@ -24,6 +24,14 @@ const DOORS: ReadonlyArray<DoorDefinition> = [
   { id: "door:maintenance", x: 43, z: -36 },
 ];
 
+export const BUS_POSITION = { x: 0, z: 31 };
+const BUS_BOARD_RADIUS = 10;
+const BUS_START_RADIUS = 9;
+const EXTRACTION_SECONDS = 12;
+const MONSTER_COOLDOWN_SECONDS = 9;
+
+type PlayerStats = { deaths: number; noise: number; throws: number; lootValue: number; campersDropped: number; secrets: number };
+
 const ROOM_WORDS = ["PINE", "LAKE", "MOSS", "FIRE", "CAMP", "BEAR", "OWL", "TENT"];
 
 export function generateRoomCode() {
@@ -45,6 +53,8 @@ export class GameHost {
   hostId = "";
   round: SharedRoundState = createRoundState("LOBBY");
   private poseDirty = false;
+  private stats = new Map<string, PlayerStats>();
+  private monsterCooldown = 0;
 
   constructor(readonly code: string, private readonly sendTo: HostSend) {}
 
@@ -72,12 +82,8 @@ export class GameHost {
 
   leave(clientId: string) {
     if (!this.players.delete(clientId)) return;
-    for (const camper of this.round.campers) {
-      if (camper.followingPlayerId === clientId) {
-        camper.followingPlayerId = null;
-        camper.state = "HIDDEN";
-      }
-    }
+    this.dropFollowers(clientId);
+    this.round.downed = this.round.downed.filter((id) => id !== clientId);
     if (this.hostId === clientId) this.hostId = this.players.keys().next().value ?? "";
     if (this.players.size > 0) this.broadcastRoster();
   }
@@ -89,8 +95,17 @@ export class GameHost {
       if (this.hostId !== clientId) return this.sendTo(clientId, { type: "error", message: "Only the host can start" });
       if (this.round.phase !== "LOBBY") return;
       this.round = createRoundState("ACTIVE");
+      this.resetStats();
+      this.monsterCooldown = 0;
       this.broadcast({ type: "start" });
       this.broadcastRound();
+      return;
+    }
+
+    if (message.type === "reset") {
+      if (this.hostId !== clientId) return this.sendTo(clientId, { type: "error", message: "Only the host can return to the lobby" });
+      if (this.round.phase !== "WON" && this.round.phase !== "LOST") return;
+      this.resetToLobby();
       return;
     }
 
@@ -131,12 +146,18 @@ export class GameHost {
       pose: { x: Math.sin(angle) * radius, y: 1.4, z: 25.5 + Math.cos(angle) * radius, yaw: 0 },
     };
     this.players.set(id, player);
+    this.stats.set(id, emptyStats());
     return player;
   }
 
   private handleInteract(playerId: string, targetId?: string) {
     const player = this.players.get(playerId);
-    if (!player) return;
+    if (!player || this.round.downed.includes(playerId)) return;
+
+    if (targetId === "bus:extract") {
+      if (distance2D(player.pose, BUS_POSITION) <= BUS_START_RADIUS) this.beginExtraction();
+      return;
+    }
 
     if (targetId?.startsWith("door:")) {
       const definition = DOORS.find((door) => door.id === targetId);
@@ -165,12 +186,39 @@ export class GameHost {
     }
   }
 
+  private beginExtraction() {
+    const round = this.round;
+    if (round.extraction.active || round.phase !== "ACTIVE") return;
+    round.extraction = { active: true, remaining: EXTRACTION_SECONDS };
+    if (!round.monster.awake && this.monsterCooldown <= 0) {
+      round.monster.awake = true;
+      round.monster.x = MONSTER_HOME.x; round.monster.y = MONSTER_HOME.y; round.monster.z = MONSTER_HOME.z;
+    }
+  }
+
+  private dropFollowers(playerId: string) {
+    for (const camper of this.round.campers) {
+      if (camper.state === "FOLLOWING" && camper.followingPlayerId === playerId) {
+        camper.followingPlayerId = null;
+        camper.state = "HIDDEN";
+        const stats = this.stats.get(playerId);
+        if (stats) stats.campersDropped += 1;
+      }
+    }
+  }
+
+  private alivePlayers() {
+    return [...this.players.values()].filter((player) => !this.round.downed.includes(player.id));
+  }
+
   private updateRound(dt: number) {
     const round = this.round;
+    round.elapsed += dt;
+    if (this.monsterCooldown > 0) this.monsterCooldown = Math.max(0, this.monsterCooldown - dt);
     for (const camper of round.campers) {
       if (camper.state !== "FOLLOWING" || !camper.followingPlayerId) continue;
       const player = this.players.get(camper.followingPlayerId);
-      if (!player) { camper.state = "HIDDEN"; camper.followingPlayerId = null; continue; }
+      if (!player || round.downed.includes(player.id)) { camper.state = "HIDDEN"; camper.followingPlayerId = null; continue; }
 
       const followers = round.campers.filter((candidate) => candidate.state === "FOLLOWING" && candidate.followingPlayerId === player.id);
       const index = followers.findIndex((candidate) => candidate.id === camper.id);
@@ -182,7 +230,7 @@ export class GameHost {
         3.4 * dt,
       );
 
-      if (distance2D(player.pose, { x: 0, z: 31 }) < 5.2) {
+      if (distance2D(player.pose, BUS_POSITION) < 5.2) {
         camper.state = "SAFE";
         camper.followingPlayerId = null;
         const safeIndex = round.campers.filter((candidate) => candidate.state === "SAFE").length;
@@ -193,11 +241,7 @@ export class GameHost {
     round.campersFound = round.campers.filter((camper) => camper.state !== "HIDDEN").length;
     round.campersSafe = round.campers.filter((camper) => camper.state === "SAFE").length;
 
-    if (round.campersSafe === round.campers.length) {
-      round.phase = "WON";
-      this.broadcastRound();
-      return;
-    }
+    if (round.campersSafe === round.campers.length && !round.extraction.active) this.beginExtraction();
 
     if (round.monster.awake && this.players.size > 0) {
       const target = this.nearestVisiblePlayer();
@@ -208,9 +252,120 @@ export class GameHost {
         const distance = distance2D(target.pose, round.monster);
         const speed = definition.baseSpeed + round.campersFound * definition.speedPerCamper;
         moveToward(round.monster, target.pose.x, target.pose.z, speed * dt);
-        if (distance < definition.catchDistance) round.phase = "LOST";
+        if (distance < definition.catchDistance) this.downPlayer(target);
       }
     }
+
+    if (round.phase === "ACTIVE" && this.alivePlayers().length === 0 && this.players.size > 0) {
+      this.finishRound(false);
+    } else if (round.extraction.active) {
+      round.extraction.remaining = Math.max(0, round.extraction.remaining - dt);
+      if (round.extraction.remaining <= 0) this.finishRound(true);
+    }
+    this.broadcastRound();
+  }
+
+  private downPlayer(player: PlayerState) {
+    const round = this.round;
+    if (round.downed.includes(player.id)) return;
+    round.downed.push(player.id);
+    const stats = this.stats.get(player.id);
+    if (stats) stats.deaths += 1;
+    this.dropFollowers(player.id);
+    this.disengageMonster();
+    this.monsterCooldown = MONSTER_COOLDOWN_SECONDS;
+  }
+
+  private finishRound(departed: boolean) {
+    const round = this.round;
+    round.extraction = { active: false, remaining: 0 };
+    const aboard = departed
+      ? this.alivePlayers().filter((player) => distance2D(player.pose, BUS_POSITION) <= BUS_BOARD_RADIUS)
+      : [];
+    if (departed) {
+      for (const camper of round.campers) {
+        if (camper.state !== "FOLLOWING" || !camper.followingPlayerId) continue;
+        if (aboard.some((player) => player.id === camper.followingPlayerId)) {
+          camper.state = "SAFE";
+          camper.followingPlayerId = null;
+        } else {
+          this.dropFollowers(camper.followingPlayerId);
+        }
+      }
+    }
+    round.campersSafe = round.campers.filter((camper) => camper.state === "SAFE").length;
+    round.results = this.buildResults(aboard.map((player) => player.id), departed && aboard.length > 0);
+    round.phase = round.results.outcome === "EXTRACTED" ? "WON" : "LOST";
+    this.disengageMonster();
+  }
+
+  private buildResults(aboardIds: string[], extracted: boolean): RoundResults {
+    const round = this.round;
+    const stats = [...this.stats.entries()].filter(([id]) => this.players.has(id));
+    const lootValue = stats.filter(([id]) => aboardIds.includes(id)).reduce((sum, [, value]) => sum + value.lootValue, 0);
+    return {
+      outcome: extracted ? "EXTRACTED" : "WIPED",
+      playersSaved: aboardIds.length,
+      playersTotal: this.players.size,
+      campersSaved: round.campersSafe,
+      campersLost: round.campers.length - round.campersSafe,
+      lootValue,
+      secrets: stats.reduce((sum, [, value]) => sum + value.secrets, 0),
+      deaths: round.downed.length,
+      awards: this.buildAwards(aboardIds),
+    };
+  }
+
+  private buildAwards(aboardIds: string[]): RoundAward[] {
+    const awards: RoundAward[] = [];
+    const taken = new Set<string>();
+    const nameOf = (id: string) => this.players.get(id)?.name ?? "Counselor";
+    const best = (pick: (stats: PlayerStats, id: string) => number, minimum: number) => {
+      let winner: string | null = null;
+      let top = minimum - 1;
+      for (const [id, value] of this.stats) {
+        if (!this.players.has(id) || taken.has(id)) continue;
+        const score = pick(value, id);
+        if (score > top) { top = score; winner = id; }
+      }
+      return winner ? { id: winner, score: top } : null;
+    };
+    const give = (title: string, picked: { id: string; score: number } | null, detail: (score: number) => string) => {
+      if (!picked) return;
+      taken.add(picked.id);
+      awards.push({ title, playerName: nameOf(picked.id), detail: detail(picked.score) });
+    };
+    give("MOST LIKELY TO ABANDON A CHILD", best((value) => value.campersDropped, 1), (n) => `left ${n} camper${n === 1 ? "" : "s"} behind`);
+    const richDead = best((value, id) => (this.round.downed.includes(id) ? value.lootValue : 0), 1);
+    give(richDead ? `DIED WITH $${richDead.score} OF LOOT` : "", richDead, () => "should have dropped it");
+    give("LOUDEST COUNSELOR", best((value) => value.noise, 1), (n) => `${Math.round(n)} decibels of regret`);
+    give("PROFESSIONAL ROCK THROWER", best((value) => value.throws, 1), (n) => `${n} throw${n === 1 ? "" : "s"}`);
+    give("GREEDIEST GREMLIN", best((value) => value.lootValue, 1), (n) => `$${n} of loot`);
+    const fallback = ["QUIETEST CHAOS", "BUDDY SYSTEM ENTHUSIAST", "SUSPICIOUSLY CALM", "CAMP SPIRIT AWARD", "PROBABLY FINE"];
+    let index = 0;
+    for (const player of this.players.values()) {
+      if (taken.has(player.id)) continue;
+      const survived = aboardIds.includes(player.id);
+      awards.push({ title: this.round.downed.includes(player.id) ? "PROFESSIONAL BEAR SNACK" : survived ? fallback[index++ % fallback.length] : "STAYED FOR THE LAKE", playerName: player.name, detail: survived ? "made it home" : "did not make it home" });
+    }
+    return awards;
+  }
+
+  private resetStats() {
+    for (const id of this.players.keys()) this.stats.set(id, emptyStats());
+  }
+
+  private resetToLobby() {
+    this.round = createRoundState("LOBBY");
+    this.resetStats();
+    this.monsterCooldown = 0;
+    let slot = 0;
+    for (const player of this.players.values()) {
+      const angle = (slot++ / MAX_PLAYERS) * Math.PI * 2;
+      player.pose = { x: Math.sin(angle) * 3.2, y: 1.4, z: 25.5 + Math.cos(angle) * 3.2, yaw: 0 };
+    }
+    this.broadcast({ type: "lobby" });
+    this.broadcastRoster();
     this.broadcastRound();
   }
 
@@ -218,6 +373,7 @@ export class GameHost {
     let target: PlayerState | null = null;
     let best = Infinity;
     for (const player of this.players.values()) {
+      if (this.round.downed.includes(player.id)) continue;
       if (!hasCampLineOfSight(this.round.monster, player.pose, this.round.doors)) continue;
       const distance = distance2D(player.pose, this.round.monster);
       if (distance < best) { best = distance; target = player; }
@@ -253,6 +409,10 @@ export function createRoundState(phase: SharedRoundState["phase"]): SharedRoundS
     monster: { kind: selected.id, x: MONSTER_HOME.x, y: MONSTER_HOME.y, z: MONSTER_HOME.z, awake: false },
     campersSafe: 0,
     campersFound: 0,
+    elapsed: 0,
+    extraction: { active: false, remaining: 0 },
+    downed: [],
+    results: null,
   };
 }
 
@@ -278,4 +438,8 @@ function moveToward(position: { x: number; z: number }, targetX: number, targetZ
 
 function distance2D(a: { x: number; z: number }, b: { x: number; z: number }) {
   return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
+function emptyStats(): PlayerStats {
+  return { deaths: 0, noise: 0, throws: 0, lootValue: 0, campersDropped: 0, secrets: 0 };
 }

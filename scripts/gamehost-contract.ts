@@ -34,4 +34,30 @@ host.leave("p0");
 if (host.hostId === "p0" || host.hostId === "") throw new Error("host migration failed");
 if (camper.state !== "HIDDEN") throw new Error("camper was not released when its rescuer left");
 
+
+// --- extraction, results, reset ---
+const inbox2 = new Map<string, ServerMessage[]>();
+const h2 = new GameHost("BEAR731", (id, m) => { if (!inbox2.has(id)) inbox2.set(id, []); inbox2.get(id)!.push(m); });
+h2.join("a", "Alice", true); h2.join("b", "Bob", false);
+h2.handle("a", { type: "start" });
+h2.handle("a", { type: "move", pose: { x: -21, y: 1.4, z: 8, yaw: 0 } });
+h2.handle("a", { type: "interact" });
+h2.handle("a", { type: "move", pose: { x: 0, y: 1.4, z: 28, yaw: 0 } });
+h2.handle("b", { type: "move", pose: { x: 60, y: 1.4, z: -60, yaw: 0 } });
+h2.handle("b", { type: "interact", targetId: "bus:extract" });
+if (h2.round.extraction.active) throw new Error("far player started the bus");
+h2.handle("a", { type: "interact", targetId: "bus:extract" });
+if (!h2.round.extraction.active) throw new Error("bus countdown did not start");
+for (let i = 0; i < 140; i += 1) h2.tick(0.1);
+if (h2.round.phase === "ACTIVE") throw new Error("round did not end after countdown");
+const results = h2.round.results;
+if (!results) throw new Error("no results produced");
+if (results.playersSaved + results.deaths < 1 && results.outcome === "EXTRACTED") throw new Error("results inconsistent");
+if (results.awards.length < 2) throw new Error("awards missing");
+h2.handle("b", { type: "reset" });
+if (h2.round.phase === "LOBBY") throw new Error("non-host reset the round");
+h2.handle("a", { type: "reset" });
+if (h2.round.phase !== "LOBBY" || h2.round.results) throw new Error("host could not reset to lobby");
+if (!(inbox2.get("b") ?? []).some((m) => m.type === "lobby")) throw new Error("lobby message not broadcast");
+
 console.log("GAMEHOST CONTRACT PASS: shared authoritative room logic (15 cap, host-only start, rescue, snapshots, host migration)");

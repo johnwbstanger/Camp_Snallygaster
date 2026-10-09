@@ -133,6 +133,8 @@ async function launchGame(networked: boolean) {
       game.setRemotePlayers(room.players, room.playerId);
       game.onPose((pose) => multiplayer?.sendPose(pose));
       game.onInteract((targetId) => multiplayer?.interact(targetId));
+      game.onReturnToLobby(() => multiplayer?.resetToLobby());
+      game.setIsHost(room.hostId === room.playerId);
       game.setVoice(voice);
       if (latestRound) game.setSharedRoundState(latestRound);
     }
@@ -158,6 +160,22 @@ async function launchGame(networked: boolean) {
   }
 }
 
+function returnToLobby() {
+  if (!room) return;
+  game?.destroy();
+  game = null;
+  latestRound = null;
+  viewport.replaceChildren();
+  viewport.classList.add("hidden");
+  gameMenuToggle.classList.add("hidden");
+  pauseMenu.classList.add("hidden");
+  paused = false;
+  menu.classList.add("hidden");
+  lobby.classList.remove("hidden");
+  renderLobby(room);
+  renderVoiceStatus(voice.status);
+}
+
 function ensureMultiplayer() {
   if (multiplayer) return multiplayer;
 
@@ -175,6 +193,7 @@ function ensureMultiplayer() {
     game?.setSharedRoundState(state);
   });
   multiplayer.onStart(() => void launchGame(true));
+  multiplayer.onLobby(() => returnToLobby());
   multiplayer.onError((message) => {
     status.textContent = message;
     lobbyStatus.textContent = message;

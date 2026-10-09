@@ -40,6 +40,10 @@ export class Game {
   private poseListener: ((pose: PlayerPose) => void) | null = null;
   private interactListener: ((targetId?: string) => void) | null = null;
   private sharedRound: SharedRoundState | null = null;
+  private lobbyListener: (() => void) | null = null;
+  private isHost = false;
+  private localPlayerId: string | null = null;
+  private resultsShown = false;
   private remotePlayers = new Map<string, THREE.Group>();
   private voice: ProximityVoice | null = null;
   private readonly voiceForward = new THREE.Vector3();
@@ -98,7 +102,9 @@ export class Game {
       <div id="micHud" class="mic-hud">🎙 …</div>
       <div id="promptText" class="game-prompt"></div>
       <div class="crosshair"></div>
-      <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p></div></div>
+      <div id="countdownText" class="countdown hidden"></div>
+      <div id="downedText" class="downed hidden">YOU WERE CAUGHT · WATCH YOUR FRIENDS</div>
+      <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p><div id="roundEndStats" class="results-grid"></div><div id="roundEndAwards" class="results-awards"></div><button id="roundEndLobby" class="primary hidden" type="button">BACK TO LOBBY</button></div></div>
     `;
     this.mount.appendChild(hud);
 
@@ -133,7 +139,11 @@ export class Game {
 
   setVoice(voice: ProximityVoice | null) { this.voice = voice; }
   onPose(callback: (pose: PlayerPose) => void) { this.poseListener = callback; }
+  onReturnToLobby(callback: () => void) { this.lobbyListener = callback; }
+  setIsHost(value: boolean) { this.isHost = value; }
   onInteract(callback: (targetId?: string) => void) { this.interactListener = callback; }
+
+  setLocalPlayerId(id: string | null) { this.localPlayerId = id; }
 
   setSharedRoundState(state: SharedRoundState) {
     this.sharedRound = state;
@@ -156,6 +166,7 @@ export class Game {
   }
 
   setRemotePlayers(players: PlayerState[], localPlayerId: string | null) {
+    this.localPlayerId = localPlayerId;
     const seen = new Set<string>();
     for (const player of players) {
       if (player.id === localPlayerId) continue;
@@ -311,6 +322,10 @@ export class Game {
     const vz = (-rightInput * sin - forwardInput * cos) * speed;
     this.player.velocity.x = vx;
     this.player.velocity.z = vz;
+    if (this.networked && this.localPlayerId && this.sharedRound?.downed.includes(this.localPlayerId)) {
+      this.player.velocity.x = 0;
+      this.player.velocity.z = 0;
+    }
 
     if (input.flashlightPressed) this.flashlightOn = !this.flashlightOn;
 
@@ -356,7 +371,8 @@ export class Game {
     const prompt = this.interactionPrompt || objective.prompt;
     this.updateHud(objective.safe, objective.total, prompt, objective.monsterAwake);
 
-    if (!this.roundEnded && (objective.complete || objective.caught)) {
+    if (this.networked) this.updateNetworkedOverlays();
+    else if (!this.roundEnded && (objective.complete || objective.caught)) {
       this.roundEnded = true;
       this.showRoundEnd(objective.complete);
     }
@@ -404,6 +420,77 @@ export class Game {
     if (objective) objective.textContent = `CAMPERS SAFE ${safe} / ${total}`;
     if (promptElement) promptElement.textContent = prompt;
     if (threat) threat.textContent = monsterAwake ? "SOMETHING IS MOVING IN THE TREES" : "THE WOODS ARE QUIET";
+  }
+
+  private updateNetworkedOverlays() {
+    const round = this.sharedRound;
+    const countdown = this.mount.querySelector<HTMLElement>("#countdownText");
+    const downed = this.mount.querySelector<HTMLElement>("#downedText");
+    if (!round) return;
+    if (countdown) {
+      const active = round.extraction.active && !round.results;
+      countdown.classList.toggle("hidden", !active);
+      if (active) countdown.textContent = `BUS DEPARTING IN ${Math.ceil(round.extraction.remaining)} · GET ON BOARD`;
+    }
+    const me = this.localPlayerId;
+    downed?.classList.toggle("hidden", !(me && round.downed.includes(me)) || Boolean(round.results));
+    if (round.results && !this.resultsShown) {
+      this.resultsShown = true;
+      this.roundEnded = true;
+      document.exitPointerLock?.();
+      this.showResults(round);
+    }
+    if (!round.results && this.resultsShown) {
+      this.resultsShown = false;
+      this.roundEnded = false;
+    }
+  }
+
+  private showResults(round: SharedRoundState) {
+    const results = round.results;
+    const overlay = this.mount.querySelector<HTMLElement>("#roundEnd");
+    if (!results || !overlay) return;
+    const set = (id: string, text: string) => { const el = this.mount.querySelector<HTMLElement>(id); if (el) el.textContent = text; };
+    set("#roundEndTitle", results.outcome === "EXTRACTED" ? "THE BUS PULLS AWAY" : "NOBODY MADE IT BACK");
+    set("#roundEndText", results.outcome === "EXTRACTED" ? "Headlights on. Doors shut. Nobody is talking about it yet." : "The camp keeps what it catches. Try again.");
+    const stats = this.mount.querySelector<HTMLElement>("#roundEndStats");
+    if (stats) {
+      stats.replaceChildren();
+      const rows: Array<[string, string]> = [
+        ["PLAYERS SAVED", `${results.playersSaved} / ${results.playersTotal}`],
+        ["CAMPERS SAVED", String(results.campersSaved)],
+        ["CAMPERS LOST", String(results.campersLost)],
+        ["LOOT VALUE", `$${results.lootValue}`],
+        ["SECRETS FOUND", String(results.secrets)],
+        ["DEATHS", String(results.deaths)],
+      ];
+      for (const [label, value] of rows) {
+        const cell = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = value;
+        const span = document.createElement("span");
+        span.textContent = label;
+        cell.append(strong, span);
+        stats.append(cell);
+      }
+    }
+    const awards = this.mount.querySelector<HTMLElement>("#roundEndAwards");
+    if (awards) {
+      awards.replaceChildren();
+      for (const award of results.awards) {
+        const line = document.createElement("p");
+        line.textContent = `🏅 ${award.title} — ${award.playerName} (${award.detail})`;
+        awards.append(line);
+      }
+    }
+    const button = this.mount.querySelector<HTMLButtonElement>("#roundEndLobby");
+    if (button) {
+      button.classList.remove("hidden");
+      button.disabled = !this.isHost;
+      button.textContent = this.isHost ? "BACK TO LOBBY" : "WAITING FOR HOST…";
+      button.onclick = () => this.lobbyListener?.();
+    }
+    overlay.classList.remove("hidden");
   }
 
   private showRoundEnd(won: boolean) {

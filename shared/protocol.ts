@@ -26,8 +26,28 @@ export type DoorState = {
   open: boolean;
 };
 
+export type RoundAward = { title: string; playerName: string; detail: string };
+
+export type RoundResults = {
+  outcome: "EXTRACTED" | "WIPED";
+  playersSaved: number;
+  playersTotal: number;
+  campersSaved: number;
+  campersLost: number;
+  lootValue: number;
+  secrets: number;
+  deaths: number;
+  awards: RoundAward[];
+};
+
+export type ExtractionState = { active: boolean; remaining: number };
+
 export type SharedRoundState = {
   phase: "LOBBY" | "ACTIVE" | "WON" | "LOST";
+  elapsed: number;
+  extraction: ExtractionState;
+  downed: string[];
+  results: RoundResults | null;
   campers: CamperState[];
   doors: DoorState[];
   monster: { kind: MonsterKind; x: number; y: number; z: number; awake: boolean };
@@ -39,6 +59,7 @@ export type ClientMessage =
   | { type: "create"; name: string }
   | { type: "join"; name: string; roomCode: string }
   | { type: "start" }
+  | { type: "reset" }
   | { type: "move"; pose: PlayerPose }
   | { type: "interact"; targetId?: string }
   | { type: "ping"; at: number };
@@ -49,5 +70,6 @@ export type ServerMessage =
   | { type: "snapshot"; players: PlayerState[] }
   | { type: "round"; state: SharedRoundState }
   | { type: "start" }
+  | { type: "lobby" }
   | { type: "pong"; at: number }
   | { type: "error"; message: string };

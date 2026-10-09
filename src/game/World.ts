@@ -243,6 +243,8 @@ export class CampWorld {
     for (const x of [-2.5, 2.45]) for (const z of [-1.56, 1.56]) { const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.34, 18), tireMat); tire.rotation.x = Math.PI / 2; tire.position.set(x, 0.57, z); fallback.add(tire); }
     root.add(fallback);
     void assetLibrary.attach("bus", root, { name: "bus-model" }).then((model) => { if (!model) return; fallback.visible = false; const importedDoor = model.getObjectByName("door-1") ?? model.getObjectByName("door-2") ?? model.getObjectByName("Door_1"); if (importedDoor) importedDoor.name = "bus-door"; });
+    const busPad = new THREE.Mesh(new THREE.BoxGeometry(9.4, 3.4, 3.8), new THREE.MeshBasicMaterial({ visible: false }));
+    busPad.position.set(0, 1.8, 0); busPad.userData.targetId = "bus:extract"; busPad.userData.prompt = "START THE BUS"; root.add(busPad); this.interactables.push(busPad);
     this.addStaticBox(0.1, 1.65, 31, 4.45, 1.65, 1.6);
   }
 

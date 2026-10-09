@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { hasCampLineOfSight, MONSTER_HOME } from "../shared/campVision.ts";
 import type { DoorState } from "../shared/protocol.ts";
 
-const serverSource = await fs.readFile(new URL("../server/index.ts", import.meta.url), "utf8");
+const serverSource = await fs.readFile(new URL("../shared/GameHost.ts", import.meta.url), "utf8");
 const objectiveSource = await fs.readFile(new URL("../src/game/ObjectiveSystem.ts", import.meta.url), "utf8");
 
 if (serverSource.includes("monster.awake ||=")) {

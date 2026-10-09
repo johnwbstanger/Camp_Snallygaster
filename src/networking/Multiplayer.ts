@@ -20,6 +20,7 @@ export class MultiplayerClient {
   private onSnapshotCallback: ((players: PlayerState[]) => void) | null = null;
   private onRoundCallback: ((state: SharedRoundState) => void) | null = null;
   private onStartCallback: (() => void) | null = null;
+  private onLobbyCallback: (() => void) | null = null;
   private onErrorCallback: ((message: string) => void) | null = null;
   private heartbeat: number | null = null;
 
@@ -62,6 +63,8 @@ export class MultiplayerClient {
   onSnapshot(callback: (players: PlayerState[]) => void) { this.onSnapshotCallback = callback; }
   onRound(callback: (state: SharedRoundState) => void) { this.onRoundCallback = callback; }
   onStart(callback: () => void) { this.onStartCallback = callback; }
+  onLobby(callback: () => void) { this.onLobbyCallback = callback; }
+  resetToLobby() { this.send({ type: "reset" }); }
   onError(callback: (message: string) => void) { this.onErrorCallback = callback; }
 
   close() {
@@ -133,6 +136,7 @@ export class MultiplayerClient {
     if (message.type === "snapshot") { this.onSnapshotCallback?.(message.players); return; }
     if (message.type === "round") { this.onRoundCallback?.(message.state); return; }
     if (message.type === "start") { this.onStartCallback?.(); return; }
+    if (message.type === "lobby") { this.onLobbyCallback?.(); return; }
     if (message.type === "error") {
       this.onErrorCallback?.(message.message);
       if (this.pendingWelcome) {

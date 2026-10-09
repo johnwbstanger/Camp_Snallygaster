@@ -146,3 +146,13 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
   .meters { bottom: calc(env(safe-area-inset-bottom) + 172px); width: 42vw; }
   .game-prompt { bottom: 22%; max-width:80vw; white-space:normal; text-align:center; }
 }
+
+.countdown { position:absolute; top:84px; left:50%; transform:translateX(-50%); padding:10px 22px; border-radius:12px; background:rgba(160,40,30,.9); border:1px solid #f4ecd8; color:#fff3d6; font-weight:800; letter-spacing:.08em; animation:pulse 1s infinite; }
+.downed { position:absolute; bottom:110px; left:50%; transform:translateX(-50%); padding:10px 20px; border-radius:12px; background:rgba(30,10,10,.85); color:#ffb4a8; font-weight:700; }
+.results-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:14px 0; }
+.results-grid div { padding:10px; border-radius:10px; background:rgba(244,236,216,.08); }
+.results-grid strong { display:block; font-size:1.5rem; color:#f2b84b; }
+.results-grid span { font-size:.7rem; letter-spacing:.08em; color:#d8cfb9; }
+.results-awards { text-align:left; max-height:30vh; overflow:auto; }
+.results-awards p { margin:4px 0; font-size:.9rem; }
+@keyframes pulse { 50% { opacity:.65; } }
