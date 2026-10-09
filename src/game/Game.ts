@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
 import type { PlayerPose, PlayerState, SharedRoundState } from "../../shared/protocol";
+import type { ProximityVoice } from "../voice/ProximityVoice";
 import { assetLibrary } from "./AssetLibrary";
 import { installCampCollisionGuard } from "./CollisionMap";
 import { addHighFidelitySetDressing } from "./HighFidelitySetDressing";
@@ -40,6 +41,8 @@ export class Game {
   private interactListener: ((targetId?: string) => void) | null = null;
   private sharedRound: SharedRoundState | null = null;
   private remotePlayers = new Map<string, THREE.Group>();
+  private voice: ProximityVoice | null = null;
+  private readonly voiceForward = new THREE.Vector3();
   private respawnPose: PlayerPose = { x: 0, y: 1.4, z: 25.5, yaw: 0 };
   private interactionRay = new THREE.Raycaster();
   private interactionTargetId: string | null = null;
@@ -92,6 +95,7 @@ export class Game {
         <div id="threatText" class="hud-threat">THE WOODS ARE QUIET</div>
       </div>
       <div class="control-help">WASD MOVE · HOLD SHIFT SPRINT · CTRL CROUCH · SPACE JUMP · E INTERACT · LMB USE · G DROP · RMB SCAN · ESC MENU</div>
+      <div id="micHud" class="mic-hud">🎙 …</div>
       <div id="promptText" class="game-prompt"></div>
       <div class="crosshair"></div>
       <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p></div></div>
@@ -127,6 +131,7 @@ export class Game {
     this.player?.velocity.setZero();
   }
 
+  setVoice(voice: ProximityVoice | null) { this.voice = voice; }
   onPose(callback: (pose: PlayerPose) => void) { this.poseListener = callback; }
   onInteract(callback: (targetId?: string) => void) { this.interactListener = callback; }
 
@@ -172,6 +177,17 @@ export class Game {
         this.remotePlayers.delete(id);
       }
     }
+  }
+
+  private updateVoice() {
+    if (!this.voice) return;
+    const positions = new Map<string, { x: number; y: number; z: number }>();
+    for (const [id, avatar] of this.remotePlayers) positions.set(id, { x: avatar.position.x, y: avatar.position.y + 1.6, z: avatar.position.z });
+    this.camera.getWorldDirection(this.voiceForward);
+    const p = this.camera.position;
+    this.voice.update({ x: p.x, y: p.y, z: p.z }, { x: this.voiceForward.x, y: this.voiceForward.y, z: this.voiceForward.z }, positions, this.sharedRound?.doors ?? []);
+    const hud = this.mount.querySelector<HTMLElement>("#micHud");
+    if (hud) hud.classList.toggle("speaking", this.voice.localSpeaking);
   }
 
   private updateRemotePlayers(dt: number) {
@@ -305,6 +321,7 @@ export class Game {
     this.camera.rotation.x = this.pitch;
     this.props.update(this.camera, dt);
     this.updateRemotePlayers(dt);
+    this.updateVoice();
 
     this.physics.step(1 / 120, dt, this.mobile ? 5 : 8);
 
