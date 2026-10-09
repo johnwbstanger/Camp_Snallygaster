@@ -25,6 +25,8 @@ jobs:
         run: npx tsx scripts/snallygaster-contract.ts
       - name: Verify randomized monster library contract
         run: npx tsx scripts/monster-library-contract.ts
+      - name: Verify shared authoritative GameHost contract
+        run: npx tsx scripts/gamehost-contract.ts
       - name: Verify clothed camper character contract
         run: node scripts/camper-character-contract.mjs
       - run: npm run build

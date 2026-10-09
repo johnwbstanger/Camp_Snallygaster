@@ -157,7 +157,7 @@ function ensureMultiplayer() {
 }
 
 async function createCamp() {
-  setBusy(true, "Waking multiplayer server and creating camp…");
+  setBusy(true, "Opening camp…");
   status.classList.remove("error");
   try {
     room = await ensureMultiplayer().createCamp(playerName());
@@ -173,7 +173,7 @@ async function createCamp() {
 async function joinCamp() {
   const code = codeInput.value.trim().toUpperCase();
   if (!code) return;
-  setBusy(true, "Waking multiplayer server and joining camp…");
+  setBusy(true, "Joining camp…");
   status.classList.remove("error");
   try {
     room = await ensureMultiplayer().joinCamp(code, playerName());

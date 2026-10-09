@@ -1,5 +1,8 @@
 import type { ClientMessage, PlayerPose, PlayerState, ServerMessage, SharedRoundState } from "../../shared/protocol";
 
+import { PeerClientTransport, PeerHostTransport, WebSocketTransport, type ClientTransport, type TransportHandlers } from "./transports";
+import { configuredServerUrl } from "./peerConfig";
+
 export type RoomInfo = {
   roomCode: string;
   playerId: string;
@@ -8,11 +11,9 @@ export type RoomInfo = {
   players: PlayerState[];
 };
 
-const DEFAULT_PRODUCTION_SERVER = "https://camp-snallygaster-rebuild.onrender.com";
-
 export class MultiplayerClient {
-  private socket: WebSocket | null = null;
-  private connectPromise: Promise<void> | null = null;
+  private transport: ClientTransport | null = null;
+  private connecting: Promise<void> | null = null;
   private pendingWelcome: { resolve: (room: RoomInfo) => void; reject: (error: Error) => void; timer: number } | null = null;
   private roomInfo: RoomInfo | null = null;
   private onRosterCallback: ((room: RoomInfo) => void) | null = null;
@@ -22,67 +23,35 @@ export class MultiplayerClient {
   private onErrorCallback: ((message: string) => void) | null = null;
   private heartbeat: number | null = null;
 
-  get connected() {
-    return this.socket?.readyState === WebSocket.OPEN;
-  }
-
-  get currentRoom() {
-    return this.roomInfo;
-  }
-
-  async connect() {
-    if (this.connected) return;
-    if (this.connectPromise) return this.connectPromise;
-
-    if (this.socket && this.socket.readyState !== WebSocket.CLOSED) {
-      try { this.socket.close(); } catch {}
-    }
-
-    this.connectPromise = new Promise<void>((resolve, reject) => {
-      const endpoint = this.endpoint();
-      const socket = new WebSocket(endpoint);
-      this.socket = socket;
-      let settled = false;
-
-      const finishError = (message: string) => {
-        if (settled) return;
-        settled = true;
-        try { socket.close(); } catch {}
-        reject(new Error(message));
-      };
-
-      const timeout = window.setTimeout(() => {
-        finishError("Multiplayer server is still waking up. Try Create Camp again in a few seconds.");
-      }, 45000);
-
-      socket.addEventListener("open", () => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
-        this.bindSocket(socket);
-        this.startHeartbeat(socket);
-        resolve();
-      }, { once: true });
-
-      socket.addEventListener("error", () => {
-        window.clearTimeout(timeout);
-        finishError("Could not reach the multiplayer server");
-      }, { once: true });
-    }).finally(() => {
-      this.connectPromise = null;
-    });
-
-    return this.connectPromise;
-  }
+  get connected() { return Boolean(this.transport?.open); }
+  get currentRoom() { return this.roomInfo; }
+  get usesServer() { return Boolean(configuredServerUrl()); }
 
   async createCamp(name: string) {
-    await this.connect();
+    this.close();
+    const handlers = this.handlers();
+    const serverUrl = configuredServerUrl();
+    if (serverUrl) {
+      this.transport = await WebSocketTransport.connect(this.wsEndpoint(serverUrl), handlers);
+      this.startHeartbeat();
+    } else {
+      this.transport = await PeerHostTransport.create(handlers);
+    }
     return this.awaitWelcome({ type: "create", name: cleanName(name) });
   }
 
   async joinCamp(roomCode: string, name: string) {
-    await this.connect();
-    return this.awaitWelcome({ type: "join", roomCode: roomCode.toUpperCase().replace(/[^A-Z0-9]/g, ""), name: cleanName(name) });
+    this.close();
+    const code = roomCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const handlers = this.handlers();
+    const serverUrl = configuredServerUrl();
+    if (serverUrl) {
+      this.transport = await WebSocketTransport.connect(this.wsEndpoint(serverUrl), handlers);
+      this.startHeartbeat();
+    } else {
+      this.transport = await PeerClientTransport.connect(code, handlers);
+    }
+    return this.awaitWelcome({ type: "join", roomCode: code, name: cleanName(name) });
   }
 
   startCamp() { this.send({ type: "start" }); }
@@ -100,108 +69,83 @@ export class MultiplayerClient {
     if (this.pendingWelcome) window.clearTimeout(this.pendingWelcome.timer);
     this.pendingWelcome = null;
     this.roomInfo = null;
-    this.socket?.close();
-    this.socket = null;
+    const transport = this.transport;
+    this.transport = null;
+    transport?.close();
   }
 
   private awaitWelcome(message: ClientMessage) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error("Multiplayer connection is not open"));
-    }
+    const transport = this.transport;
+    if (!transport?.open) return Promise.reject(new Error("Multiplayer connection is not open"));
     if (this.pendingWelcome) return Promise.reject(new Error("A room request is already pending"));
-
     return new Promise<RoomInfo>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         this.pendingWelcome = null;
         reject(new Error("Camp request timed out"));
       }, 20000);
       this.pendingWelcome = { resolve, reject, timer };
-      this.send(message);
+      transport.send(message);
     });
   }
 
-  private bindSocket(socket: WebSocket) {
-    socket.addEventListener("message", (event) => {
-      let message: ServerMessage;
-      try {
-        message = JSON.parse(String(event.data)) as ServerMessage;
-      } catch {
-        return;
-      }
-
-      if (message.type === "welcome") {
-        const room: RoomInfo = {
-          roomCode: message.roomCode,
-          playerId: message.playerId,
-          hostId: message.hostId,
-          maxPlayers: message.maxPlayers,
-          players: message.players,
-        };
-        this.roomInfo = room;
+  private handlers(): TransportHandlers {
+    return {
+      onMessage: (message) => this.receive(message),
+      onClose: (reason) => {
         if (this.pendingWelcome) {
           window.clearTimeout(this.pendingWelcome.timer);
-          this.pendingWelcome.resolve(room);
+          this.pendingWelcome.reject(new Error(reason));
           this.pendingWelcome = null;
         }
-        this.onRosterCallback?.(room);
-        return;
-      }
-
-      if (message.type === "roster") {
-        if (!this.roomInfo) return;
-        this.roomInfo = {
-          ...this.roomInfo,
-          roomCode: message.roomCode,
-          hostId: message.hostId,
-          maxPlayers: message.maxPlayers,
-          players: message.players,
-        };
-        this.onRosterCallback?.(this.roomInfo);
-        return;
-      }
-
-      if (message.type === "snapshot") {
-        this.onSnapshotCallback?.(message.players);
-        return;
-      }
-
-      if (message.type === "round") {
-        this.onRoundCallback?.(message.state);
-        return;
-      }
-
-      if (message.type === "start") {
-        this.onStartCallback?.();
-        return;
-      }
-
-      if (message.type === "error") {
-        this.onErrorCallback?.(message.message);
-        if (this.pendingWelcome) {
-          window.clearTimeout(this.pendingWelcome.timer);
-          this.pendingWelcome.reject(new Error(message.message));
-          this.pendingWelcome = null;
+        if (this.transport) {
+          this.stopHeartbeat();
+          this.transport = null;
+          this.onErrorCallback?.(reason);
         }
-      }
-    });
+      },
+    };
+  }
 
-    socket.addEventListener("close", () => {
-      if (this.socket === socket) this.stopHeartbeat();
+  private receive(message: ServerMessage) {
+    if (message.type === "welcome") {
+      const room: RoomInfo = {
+        roomCode: message.roomCode,
+        playerId: message.playerId,
+        hostId: message.hostId,
+        maxPlayers: message.maxPlayers,
+        players: message.players,
+      };
+      this.roomInfo = room;
       if (this.pendingWelcome) {
         window.clearTimeout(this.pendingWelcome.timer);
-        this.pendingWelcome.reject(new Error("Multiplayer server disconnected"));
+        this.pendingWelcome.resolve(room);
         this.pendingWelcome = null;
       }
-      if (this.socket === socket) this.socket = null;
-      this.onErrorCallback?.("Multiplayer server disconnected");
-    });
+      this.onRosterCallback?.(room);
+      return;
+    }
+    if (message.type === "roster") {
+      if (!this.roomInfo) return;
+      this.roomInfo = { ...this.roomInfo, roomCode: message.roomCode, hostId: message.hostId, maxPlayers: message.maxPlayers, players: message.players };
+      this.onRosterCallback?.(this.roomInfo);
+      return;
+    }
+    if (message.type === "snapshot") { this.onSnapshotCallback?.(message.players); return; }
+    if (message.type === "round") { this.onRoundCallback?.(message.state); return; }
+    if (message.type === "start") { this.onStartCallback?.(); return; }
+    if (message.type === "error") {
+      this.onErrorCallback?.(message.message);
+      if (this.pendingWelcome) {
+        window.clearTimeout(this.pendingWelcome.timer);
+        this.pendingWelcome.reject(new Error(message.message));
+        this.pendingWelcome = null;
+      }
+    }
   }
 
-  private startHeartbeat(socket: WebSocket) {
+  private startHeartbeat() {
     this.stopHeartbeat();
-    this.heartbeat = window.setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping", at: Date.now() }));
-    }, 20000);
+    this.heartbeat = window.setInterval(() => this.send({ type: "ping", at: Date.now() }), 20000);
   }
 
   private stopHeartbeat() {
@@ -209,23 +153,10 @@ export class MultiplayerClient {
     this.heartbeat = null;
   }
 
-  private send(message: ClientMessage) {
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message));
-  }
+  private send(message: ClientMessage) { this.transport?.send(message); }
 
-  private endpoint() {
-    const configured = String(import.meta.env.VITE_SERVER_URL || "").replace(/\/$/, "");
-    const isGitHubPages = location.hostname.endsWith("github.io");
-    const productionBase = configured || (isGitHubPages ? DEFAULT_PRODUCTION_SERVER : "");
-
-    if (productionBase) {
-      const base = productionBase.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
-      return `${base}/ws`;
-    }
-    if (import.meta.env.DEV) {
-      return `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:3001/ws`;
-    }
-    return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+  private wsEndpoint(base: string) {
+    return `${base.replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/ws`;
   }
 }
 
