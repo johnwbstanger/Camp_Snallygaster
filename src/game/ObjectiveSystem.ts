@@ -8,6 +8,7 @@ import {
 } from "../../shared/monsterLibrary";
 import { hasCampLineOfSight, MONSTER_HOME } from "../../shared/campVision";
 import { addCampDetailKit } from "./CampDetailKit";
+import { CAMPERS, buildCamper, disposeCamper, poseCamper } from "./campers";
 
 export type ObjectiveStatus = {
   found: number;
@@ -32,14 +33,14 @@ type Camper = {
   walkPhase: number;
 };
 
-const CAMPERS = [
-  ["Ben", -21, 0.8, 8],
-  ["Maya", -11, 0.8, -10],
-  ["Jamie", 13, 0.8, 9],
-  ["Katie", 20, 0.8, -17],
-  ["Nate", -19, 0.8, -18],
-  ["Jess", -4, 0.8, 21],
-  ["Luke", 25, 0.8, 16],
+const CAMPER_SPAWNS = [
+  [-21, 0.8, 8],
+  [-11, 0.8, -10],
+  [13, 0.8, 9],
+  [20, 0.8, -17],
+  [-19, 0.8, -18],
+  [-4, 0.8, 21],
+  [25, 0.8, 16],
 ] as const;
 
 const BUS_DOOR = new THREE.Vector3(2.95, 0.02, 29.55);
@@ -140,20 +141,25 @@ export class ObjectiveSystem {
   }
 
   destroy() {
-    for (const camper of this.campers) camper.mesh.removeFromParent();
+    for (const camper of this.campers) {
+      camper.mesh.removeFromParent();
+      disposeCamper(camper.fallback);
+    }
     this.disposeMonsterVisuals();
     this.monster.removeFromParent();
   }
 
   private createCampers() {
-    CAMPERS.forEach(([name, x, y, z], index) => {
+    CAMPER_SPAWNS.forEach(([x, y, z], index) => {
+      const def = CAMPERS[index];
+      const name = def.name;
       const root = new THREE.Group();
       root.position.set(x, y, z);
       root.scale.setScalar(CAMPER_RENDER_SCALE);
 
       const visual = new THREE.Group();
       visual.name = "camper-visual";
-      const fallback = this.createCamperFallback(index);
+      const fallback = buildCamper(def, !this.mobile);
       fallback.name = "camper-fallback";
       visual.add(fallback);
       root.add(visual);
@@ -179,78 +185,6 @@ export class ObjectiveSystem {
         object.userData.prompt = `CALL TO ${name.toUpperCase()}`;
       });
     });
-  }
-
-  private createCamperFallback(index: number) {
-    const group = new THREE.Group();
-    const shirtColors = [0xd7a844, 0xd46f4b, 0x5f8f7b, 0xc7789c, 0x5476a3, 0xc9853c, 0x6f8b55];
-    const shortsColors = [0x334554, 0x56483d, 0x2e4d44, 0x45424b];
-    const packColors = [0x8b4e3d, 0x3f6c5d, 0xc18b38, 0x4c5875];
-    const skinColors = [0xc99368, 0xd6a27a, 0xb97b57, 0xe0b28a, 0x8f5d42];
-    const hairColors = [0x3f2f24, 0x211d1b, 0x7b5738, 0xb08a55, 0x442b22];
-    const shirt = new THREE.MeshStandardMaterial({ color: shirtColors[index % shirtColors.length], roughness: 0.82 });
-    const shorts = new THREE.MeshStandardMaterial({ color: shortsColors[index % shortsColors.length], roughness: 0.88 });
-    const skin = new THREE.MeshStandardMaterial({ color: skinColors[index % skinColors.length], roughness: 0.9 });
-    const hair = new THREE.MeshStandardMaterial({ color: hairColors[index % hairColors.length], roughness: 0.95 });
-    const shoes = new THREE.MeshStandardMaterial({ color: index % 2 ? 0xd8d0bd : 0x30383a, roughness: 0.9 });
-    const socks = new THREE.MeshStandardMaterial({ color: 0xd9d6c9, roughness: 0.95 });
-    const packMat = new THREE.MeshStandardMaterial({ color: packColors[index % packColors.length], roughness: 0.9 });
-
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.5, 6, 14), shirt);
-    torso.position.y = 0.91;
-    const shortsBody = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.3, 0.32), shorts);
-    shortsBody.position.y = 0.53;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 14), skin);
-    head.position.y = 1.5;
-    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.226, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
-    hairCap.position.y = 1.57;
-    group.add(torso, shortsBody, head, hairCap);
-
-    for (const side of [-1, 1]) {
-      const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.18, 4, 10), shirt);
-      sleeve.position.set(side * 0.31, 1.02, 0);
-      sleeve.name = side < 0 ? "arm-left" : "arm-right";
-      const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.18, 4, 10), skin);
-      forearm.position.set(side * 0.31, 0.76, 0);
-      sleeve.add(forearm);
-
-      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.3, 4, 10), skin);
-      leg.position.set(side * 0.12, 0.21, 0);
-      leg.name = side < 0 ? "leg-left" : "leg-right";
-      const sock = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.082, 0.17, 12), socks);
-      sock.position.set(side * 0.12, 0.0, 0);
-      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.11, 0.32), shoes);
-      shoe.position.set(side * 0.12, -0.11, 0.08);
-      group.add(sleeve, leg, sock, shoe);
-    }
-
-    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.56, 0.22, 2, 2, 2), packMat);
-    pack.position.set(0, 0.91, -0.25);
-    const topRoll = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.4, 12), new THREE.MeshStandardMaterial({ color: 0xc49b59, roughness: 0.92 }));
-    topRoll.rotation.z = Math.PI / 2;
-    topRoll.position.set(0, 1.2, -0.28);
-    group.add(pack, topRoll);
-
-    if (index % 3 === 0) {
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.235, 0.08, 18), shirt);
-      cap.position.y = 1.7;
-      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.035, 0.18), shirt);
-      brim.position.set(0, 1.68, 0.17);
-      group.add(cap, brim);
-    }
-
-    const neckerchief = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 3), new THREE.MeshStandardMaterial({ color: 0xb43f34, roughness: 0.86 }));
-    neckerchief.rotation.x = Math.PI;
-    neckerchief.position.set(0, 1.23, 0.18);
-    group.add(neckerchief);
-
-    group.traverse((object) => {
-      if (object instanceof THREE.Mesh) {
-        object.castShadow = !this.mobile;
-        object.receiveShadow = !this.mobile;
-      }
-    });
-    return group;
   }
 
   private createMonster() {
@@ -433,15 +367,7 @@ export class ObjectiveSystem {
     camper.walkPhase += dt * (8 + speed * 0.7);
     camper.visual.position.y = Math.abs(Math.sin(camper.walkPhase)) * 0.035;
 
-    const armLeft = camper.fallback.getObjectByName("arm-left");
-    const armRight = camper.fallback.getObjectByName("arm-right");
-    const legLeft = camper.fallback.getObjectByName("leg-left");
-    const legRight = camper.fallback.getObjectByName("leg-right");
-    const swing = Math.sin(camper.walkPhase) * 0.55;
-    if (armLeft) armLeft.rotation.x = swing;
-    if (armRight) armRight.rotation.x = -swing;
-    if (legLeft) legLeft.rotation.x = -swing * 0.65;
-    if (legRight) legRight.rotation.x = swing * 0.65;
+    poseCamper(camper.fallback, "walk", camper.walkPhase);
   }
 
   private updateBoarding(dt: number) {
