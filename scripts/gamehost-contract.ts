@@ -35,6 +35,26 @@ if (host.hostId === "p0" || host.hostId === "") throw new Error("host migration 
 if (camper.state !== "HIDDEN") throw new Error("camper was not released when its rescuer left");
 
 
+// --- loot ---
+const h3 = new GameHost("MOSS482", () => {});
+h3.join("a", "Alice", true); h3.handle("a", { type: "start" });
+if (h3.round.loot.length < 15) throw new Error("round spawned too little loot");
+const first = h3.round.loot[0];
+h3.handle("a", { type: "move", pose: { x: first.x + 20, y: 1.4, z: first.z, yaw: 0 } });
+h3.handle("a", { type: "interact", targetId: first.id });
+if (first.heldBy) throw new Error("picked up loot from across the map");
+h3.handle("a", { type: "move", pose: { x: first.x, y: 1.4, z: first.z, yaw: 0 } });
+h3.handle("a", { type: "interact", targetId: first.id });
+if (first.heldBy !== "a") throw new Error("loot pickup failed");
+for (const other of h3.round.loot.slice(1, 6)) { other.x = first.x; other.z = first.z; h3.handle("a", { type: "interact", targetId: other.id }); }
+if (h3.round.loot.filter((item) => item.heldBy === "a").length !== 3) throw new Error("carry limit not enforced at 3");
+h3.handle("a", { type: "drop" });
+if (h3.round.loot.filter((item) => item.heldBy === "a").length !== 2) throw new Error("drop did not release one item");
+const carriedValue = h3.round.loot.filter((item) => item.heldBy === "a").reduce((sum, item) => sum + item.value, 0);
+h3.handle("a", { type: "move", pose: { x: 0, y: 1.4, z: 29, yaw: 0 } });
+h3.tick(0.1);
+if (h3.round.lootDelivered !== carriedValue) throw new Error("loot was not delivered at the bus");
+
 // --- extraction, results, reset ---
 const inbox2 = new Map<string, ServerMessage[]>();
 const h2 = new GameHost("BEAR731", (id, m) => { if (!inbox2.has(id)) inbox2.set(id, []); inbox2.get(id)!.push(m); });

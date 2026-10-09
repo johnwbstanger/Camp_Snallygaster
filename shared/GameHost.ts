@@ -3,6 +3,7 @@ import { hasCampLineOfSight, MONSTER_HOME } from "./campVision.js";
 import { chooseRandomMonster } from "./monsterLibrary.js";
 import { MonsterBrain, type NoiseEvent, type SensePlayer } from "./monsterAI.js";
 import { doorPosition } from "./campNav.js";
+import { LOOT_CARRY_LIMIT, pickLoot } from "./loot.js";
 
 export const MAX_PLAYERS = 15;
 
@@ -32,7 +33,7 @@ const BUS_START_RADIUS = 9;
 const EXTRACTION_SECONDS = 12;
 const MAX_NOISE_LOUDNESS = 120;
 
-type PlayerStats = { deaths: number; noise: number; throws: number; lootValue: number; campersDropped: number; secrets: number };
+type PlayerStats = { deaths: number; noise: number; throws: number; lootValue: number; lootCollected: number; diedWith: number; campersDropped: number; secrets: number };
 
 const ROOM_WORDS = ["PINE", "LAKE", "MOSS", "FIRE", "CAMP", "BEAR", "OWL", "TENT"];
 
@@ -85,6 +86,7 @@ export class GameHost {
   }
 
   leave(clientId: string) {
+    if (this.players.has(clientId)) this.dropLoot(clientId, true);
     if (!this.players.delete(clientId)) return;
     this.dropFollowers(clientId);
     this.round.downed = this.round.downed.filter((id) => id !== clientId);
@@ -118,6 +120,11 @@ export class GameHost {
       if (!player) return;
       player.pose = sanitizePose(message.pose);
       this.poseDirty = true;
+      return;
+    }
+
+    if (message.type === "drop") {
+      if (this.round.phase === "ACTIVE") { this.dropLoot(clientId); this.broadcastRound(); }
       return;
     }
 
@@ -172,6 +179,11 @@ export class GameHost {
     const player = this.players.get(playerId);
     if (!player || this.round.downed.includes(playerId)) return;
 
+    if (targetId?.startsWith("loot:")) {
+      this.pickUpLoot(player, targetId);
+      return;
+    }
+
     if (targetId === "bus:extract") {
       if (distance2D(player.pose, BUS_POSITION) <= BUS_START_RADIUS) this.beginExtraction();
       return;
@@ -200,6 +212,51 @@ export class GameHost {
       this.brain.wakeAt(nearest.position, this.round.doors);
       this.syncMonster();
       this.round.campersFound = this.round.campers.filter((camper) => camper.state !== "HIDDEN").length;
+    }
+  }
+
+  private heldLoot(playerId: string) {
+    return this.round.loot.filter((item) => item.heldBy === playerId);
+  }
+
+  private pickUpLoot(player: PlayerState, targetId: string) {
+    const item = this.round.loot.find((candidate) => candidate.id === targetId);
+    if (!item || item.heldBy || item.delivered) return;
+    if (Math.hypot(player.pose.x - item.x, player.pose.z - item.z) > 4.5) return;
+    if (this.heldLoot(player.id).length >= LOOT_CARRY_LIMIT) {
+      return this.sendTo(player.id, { type: "error", message: `Hands full (${LOOT_CARRY_LIMIT} items). Press G to drop something.` });
+    }
+    item.heldBy = player.id;
+    const stats = this.stats.get(player.id);
+    if (stats) { stats.lootValue += item.value; stats.lootCollected += item.value; }
+    this.emitNoise({ x: item.x, z: item.z, loudness: 4, material: "generic", source: "pickup" }, player.id);
+  }
+
+  private dropLoot(playerId: string, all = false) {
+    const player = this.players.get(playerId);
+    const held = this.heldLoot(playerId);
+    if (!player || held.length === 0) return;
+    const items = all ? held : [held[held.length - 1]];
+    items.forEach((item, index) => {
+      const angle = player.pose.yaw + (index - (items.length - 1) / 2) * 0.6;
+      item.heldBy = null;
+      item.x = player.pose.x - Math.sin(angle) * (all ? 0.8 : 1.3);
+      item.z = player.pose.z - Math.cos(angle) * (all ? 0.8 : 1.3);
+      item.y = 0.3;
+      const stats = this.stats.get(playerId);
+      if (stats) stats.lootValue = Math.max(0, stats.lootValue - item.value);
+    });
+  }
+
+  private deliverLoot(playerIds: string[]) {
+    for (const id of playerIds) {
+      for (const item of this.heldLoot(id)) {
+        item.delivered = true;
+        item.heldBy = null;
+        this.round.lootDelivered += item.value;
+        const stats = this.stats.get(id);
+        if (stats) stats.lootValue = Math.max(0, stats.lootValue - item.value);
+      }
     }
   }
 
@@ -252,6 +309,7 @@ export class GameHost {
       }
     }
 
+    this.deliverLoot(this.alivePlayers().filter((player) => distance2D(player.pose, BUS_POSITION) < 5.2).map((player) => player.id));
     round.campersFound = round.campers.filter((camper) => camper.state !== "HIDDEN").length;
     round.campersSafe = round.campers.filter((camper) => camper.state === "SAFE").length;
 
@@ -293,7 +351,8 @@ export class GameHost {
     if (round.downed.includes(player.id)) return;
     round.downed.push(player.id);
     const stats = this.stats.get(player.id);
-    if (stats) stats.deaths += 1;
+    if (stats) { stats.deaths += 1; stats.diedWith = stats.lootValue; }
+    this.dropLoot(player.id, true);
     this.dropFollowers(player.id);
   }
 
@@ -348,6 +407,7 @@ export class GameHost {
         }
       }
     }
+    this.deliverLoot(aboard.map((player) => player.id));
     round.campersSafe = round.campers.filter((camper) => camper.state === "SAFE").length;
     round.results = this.buildResults(aboard.map((player) => player.id), departed && aboard.length > 0);
     round.phase = round.results.outcome === "EXTRACTED" ? "WON" : "LOST";
@@ -357,7 +417,7 @@ export class GameHost {
   private buildResults(aboardIds: string[], extracted: boolean): RoundResults {
     const round = this.round;
     const stats = [...this.stats.entries()].filter(([id]) => this.players.has(id));
-    const lootValue = stats.filter(([id]) => aboardIds.includes(id)).reduce((sum, [, value]) => sum + value.lootValue, 0);
+    const lootValue = round.lootDelivered;
     return {
       outcome: extracted ? "EXTRACTED" : "WIPED",
       playersSaved: aboardIds.length,
@@ -391,11 +451,11 @@ export class GameHost {
       awards.push({ title, playerName: nameOf(picked.id), detail: detail(picked.score) });
     };
     give("MOST LIKELY TO ABANDON A CHILD", best((value) => value.campersDropped, 1), (n) => `left ${n} camper${n === 1 ? "" : "s"} behind`);
-    const richDead = best((value, id) => (this.round.downed.includes(id) ? value.lootValue : 0), 1);
+    const richDead = best((value) => value.diedWith, 1);
     give(richDead ? `DIED WITH $${richDead.score} OF LOOT` : "", richDead, () => "should have dropped it");
     give("LOUDEST COUNSELOR", best((value) => value.noise, 1), (n) => `${Math.round(n)} decibels of regret`);
     give("PROFESSIONAL ROCK THROWER", best((value) => value.throws, 1), (n) => `${n} throw${n === 1 ? "" : "s"}`);
-    give("GREEDIEST GREMLIN", best((value) => value.lootValue, 1), (n) => `$${n} of loot`);
+    give("GREEDIEST GREMLIN", best((value) => value.lootCollected, 1), (n) => `$${n} of loot`);
     const fallback = ["QUIETEST CHAOS", "BUDDY SYSTEM ENTHUSIAST", "SUSPICIOUSLY CALM", "CAMP SPIRIT AWARD", "PROBABLY FINE"];
     let index = 0;
     for (const player of this.players.values()) {
@@ -460,6 +520,8 @@ export function createRoundState(phase: SharedRoundState["phase"]): SharedRoundS
     campersFound: 0,
     elapsed: 0,
     extraction: { active: false, remaining: 0 },
+    loot: phase === "LOBBY" ? [] : pickLoot().map(({ definition, spawn }, index) => ({ id: `loot:${index + 1}`, name: definition.name, kind: definition.kind, shape: definition.shape, color: definition.color, value: definition.value, weight: definition.weight, blurb: definition.blurb, x: spawn.x, y: 0.3, z: spawn.z, heldBy: null, delivered: false })),
+    lootDelivered: 0,
     downed: [],
     results: null,
   };
@@ -493,5 +555,5 @@ function distance2D(a: { x: number; z: number }, b: { x: number; z: number }) {
 }
 
 function emptyStats(): PlayerStats {
-  return { deaths: 0, noise: 0, throws: 0, lootValue: 0, campersDropped: 0, secrets: 0 };
+  return { deaths: 0, noise: 0, throws: 0, lootValue: 0, lootCollected: 0, diedWith: 0, campersDropped: 0, secrets: 0 };
 }

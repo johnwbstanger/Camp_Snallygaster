@@ -66,6 +66,7 @@ export class MultiplayerClient {
   onRound(callback: (state: SharedRoundState) => void) { this.onRoundCallback = callback; }
   onStart(callback: () => void) { this.onStartCallback = callback; }
   onLobby(callback: () => void) { this.onLobbyCallback = callback; }
+  dropLoot() { this.send({ type: "drop" }); }
   sendNoise(noise: NoiseMessage) { this.send({ type: "noise", ...noise }); }
   sendProps(props: PropTransform[]) { if (props.length) this.send({ type: "props", props }); }
   onNoise(callback: (noise: NoiseMessage & { by: string }) => void) { this.onNoiseCallback = callback; }

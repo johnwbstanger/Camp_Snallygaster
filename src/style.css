@@ -160,3 +160,4 @@ button.primary { width: 100%; margin-top: 18px; color: #1a2d25; background: var(
 .hud-threat[data-level="CHASE"], .hud-threat[data-level="ATTACK"], .hud-threat[data-level="SPOT"] { color:#ff6a5a; animation:pulse .6s infinite; }
 .hud-threat[data-level="SUSPICIOUS"], .hud-threat[data-level="HEAR"] { color:#f2b84b; }
 .round-end, .round-end * { pointer-events:auto; }
+.hud-loot { margin-top:4px; color:#f2d9a0; font-size:.8rem; letter-spacing:.06em; }

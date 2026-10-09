@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
+import { weightSpeedFactor } from "../../shared/loot";
 import type { NoiseMessage, PlayerPose, PlayerState, PropTransform, SharedRoundState } from "../../shared/protocol";
 import { Sfx } from "../audio/Sfx";
 import type { ProximityVoice } from "../voice/ProximityVoice";
@@ -8,6 +9,7 @@ import { installCampCollisionGuard } from "./CollisionMap";
 import { addHighFidelitySetDressing } from "./HighFidelitySetDressing";
 import { InputManager } from "./Input";
 import { ObjectiveSystem } from "./ObjectiveSystem";
+import { LootSystem } from "./LootSystem";
 import { PhysicalProps } from "./PhysicalProps";
 import { CampWorld } from "./World";
 
@@ -40,6 +42,8 @@ export class Game {
   private world!: CampWorld;
   private objectives!: ObjectiveSystem;
   private props!: PhysicalProps;
+  private loot!: LootSystem;
+  private dropListener: (() => void) | null = null;
   private flashlight!: THREE.SpotLight;
   private flashlightTarget!: THREE.Object3D;
   private flashlightOn = false;
@@ -98,6 +102,7 @@ export class Game {
       if (this.networked) this.noiseListener?.(noise);
       else this.sfx.impact(noise.material, noise.loudness, noise, this.player.position);
     });
+    this.loot = new LootSystem(this.world.scene, this.mobile);
     this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 190);
     this.camera.rotation.order = "YXZ";
 
@@ -120,6 +125,7 @@ export class Game {
       <div class="hud-card mission-card">
         <div class="hud-kicker">CAMP SNALLYGASTER • 1993</div>
         <div id="objectiveText" class="hud-objective">CAMPERS SAFE 0 / 7</div>
+        <div id="lootText" class="hud-loot"></div>
         <div id="threatText" class="hud-threat">THE WOODS ARE QUIET</div>
       </div>
       <div class="control-help">WASD MOVE · HOLD SHIFT SPRINT · CTRL CROUCH · SPACE JUMP · E INTERACT · LMB USE · G DROP · RMB SCAN · ESC MENU</div>
@@ -165,6 +171,7 @@ export class Game {
 
   setVoice(voice: ProximityVoice | null) { this.voice = voice; }
   onPose(callback: (pose: PlayerPose) => void) { this.poseListener = callback; }
+  onDropLoot(callback: () => void) { this.dropListener = callback; }
   onNoise(callback: (noise: NoiseMessage) => void) { this.noiseListener = callback; }
   onProps(callback: (props: PropTransform[]) => void) { this.propsListener = callback; }
   receiveNoise(noise: NoiseMessage & { by: string }) {
@@ -181,6 +188,7 @@ export class Game {
   setSharedRoundState(state: SharedRoundState) {
     this.sharedRound = state;
     this.world?.updateDoors(state.doors);
+    this.loot?.sync(state.loot ?? []);
   }
 
   setLocalPose(pose: PlayerPose) {
@@ -257,6 +265,7 @@ export class Game {
     this.pause();
     removeEventListener("resize", this.resizeHandler);
     document.removeEventListener("visibilitychange", this.visibilityHandler);
+    this.loot?.destroy();
     this.sfx.stop();
     this.input?.destroy();
     this.objectives?.destroy();
@@ -356,6 +365,12 @@ export class Game {
     const vz = (-rightInput * sin - forwardInput * cos) * speed;
     this.player.velocity.x = vx;
     this.player.velocity.z = vz;
+    const carried = this.carriedLoot();
+    if (carried.length) {
+      const factor = weightSpeedFactor(carried.reduce((sum, item) => sum + item.weight, 0));
+      this.player.velocity.x *= factor;
+      this.player.velocity.z *= factor;
+    }
     if (this.networked && this.localPlayerId && this.sharedRound?.downed.includes(this.localPlayerId)) {
       this.player.velocity.x = 0;
       this.player.velocity.z = 0;
@@ -369,6 +384,7 @@ export class Game {
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
     this.props.update(this.camera, dt);
+    this.loot.update(dt);
     this.updateRemotePlayers(dt);
     this.updateVoice();
 
@@ -397,7 +413,7 @@ export class Game {
     }
 
     if (input.usePressed && this.props.isHolding) this.props.throwHeld(this.camera);
-    else if (input.dropPressed) this.props.dropHeld();
+    else if (input.dropPressed && !this.props.dropHeld() && this.networked) this.dropListener?.();
     if (this.networked) this.emitNetworkEvents(now, moving, sprinting, input.crouch);
 
     const playerPosition = new THREE.Vector3(p.x, p.y, p.z);
@@ -422,6 +438,11 @@ export class Game {
     this.frameId = requestAnimationFrame((time) => this.loop(time));
   }
 
+  private carriedLoot() {
+    if (!this.localPlayerId || !this.sharedRound) return [];
+    return (this.sharedRound.loot ?? []).filter((item) => item.heldBy === this.localPlayerId);
+  }
+
   private emitNetworkEvents(now: number, moving: boolean, sprinting: boolean, crouching: boolean) {
     const p = this.player.position;
     if (moving && !crouching && now - this.lastStepNoise > 600) {
@@ -443,7 +464,7 @@ export class Game {
   private updateInteraction() {
     this.interactionTargetId = null;
     this.interactionPrompt = "";
-    const candidates = [...this.world.interactables, ...this.props.interactables];
+    const candidates = [...this.world.interactables, ...this.props.interactables, ...this.loot.interactables];
     if (candidates.length === 0) return;
 
     this.interactionRay.setFromCamera(new THREE.Vector2(0, 0), this.camera);
@@ -481,7 +502,13 @@ export class Game {
       threat.dataset.level = state;
     }
     const heldElement = this.mount.querySelector<HTMLElement>("#heldText");
-    if (heldElement) heldElement.textContent = this.props.heldLabel ? `HOLDING ${this.props.heldLabel} · LMB THROW · G DROP` : "";
+    const carried = this.carriedLoot();
+    const weight = carried.reduce((sum, item) => sum + item.weight, 0);
+    const value = carried.reduce((sum, item) => sum + item.value, 0);
+    const bag = carried.length ? `CARRYING ${carried.map((item) => item.name.toUpperCase()).join(" · ")} · ${weight} LB · $${value} · G DROP` : "";
+    if (heldElement) heldElement.textContent = this.props.heldLabel ? `HOLDING ${this.props.heldLabel} · LMB THROW · G DROP` : bag;
+    const lootElement = this.mount.querySelector<HTMLElement>("#lootText");
+    if (lootElement) lootElement.textContent = this.sharedRound ? `LOOT SECURED $${this.sharedRound.lootDelivered ?? 0}` : "";
   }
 
   private updateNetworkedOverlays() {

@@ -133,6 +133,7 @@ async function launchGame(networked: boolean) {
       game.setRemotePlayers(room.players, room.playerId);
       game.onPose((pose) => multiplayer?.sendPose(pose));
       game.onInteract((targetId) => multiplayer?.interact(targetId));
+      game.onDropLoot(() => multiplayer?.dropLoot());
       game.onNoise((noise) => multiplayer?.sendNoise(noise));
       game.onProps((props) => multiplayer?.sendProps(props));
       game.onReturnToLobby(() => multiplayer?.resetToLobby());

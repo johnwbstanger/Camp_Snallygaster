@@ -20,9 +20,15 @@ export type PlayerState = {
   pose: PlayerPose;
 };
 
+export type CamperMood = "HIDING" | "CALM" | "PANIC" | "FROZEN";
+
 export type CamperState = {
   id: string;
   name: string;
+  personality: number;
+  mood: CamperMood;
+  line: string;
+  lineSeq: number;
   state: "HIDDEN" | "FOLLOWING" | "SAFE";
   followingPlayerId: string | null;
   position: { x: number; y: number; z: number };
@@ -47,12 +53,30 @@ export type RoundResults = {
   awards: RoundAward[];
 };
 
+export type LootState = {
+  id: string;
+  name: string;
+  kind: "useful" | "valuable" | "ridiculous";
+  shape: string;
+  color: number;
+  value: number;
+  weight: number;
+  blurb: string;
+  x: number;
+  y: number;
+  z: number;
+  heldBy: string | null;
+  delivered: boolean;
+};
+
 export type ExtractionState = { active: boolean; remaining: number };
 
 export type SharedRoundState = {
   phase: "LOBBY" | "ACTIVE" | "WON" | "LOST";
   elapsed: number;
   extraction: ExtractionState;
+  loot: LootState[];
+  lootDelivered: number;
   downed: string[];
   results: RoundResults | null;
   campers: CamperState[];
@@ -67,6 +91,7 @@ export type ClientMessage =
   | { type: "join"; name: string; roomCode: string }
   | { type: "start" }
   | { type: "reset" }
+  | { type: "drop" }
   | { type: "move"; pose: PlayerPose }
   | ({ type: "noise" } & NoiseMessage)
   | { type: "props"; props: PropTransform[] }
