@@ -2,13 +2,13 @@ import fs from "node:fs/promises";
 import { hasCampLineOfSight, MONSTER_HOME } from "../shared/campVision.ts";
 import type { DoorState } from "../shared/protocol.ts";
 
-const serverSource = await fs.readFile(new URL("../server/index.ts", import.meta.url), "utf8");
+const serverSource = (await fs.readFile(new URL("../shared/GameHost.ts", import.meta.url), "utf8")) + (await fs.readFile(new URL("../shared/monsterAI.ts", import.meta.url), "utf8"));
 const objectiveSource = await fs.readFile(new URL("../src/game/ObjectiveSystem.ts", import.meta.url), "utf8");
 
 if (serverSource.includes("monster.awake ||=")) {
   throw new Error("Sticky monster-awake regression: server still forces chase forever after rescue");
 }
-for (const fragment of ["hasCampLineOfSight", "nearestVisiblePlayer", "disengageMonster", "monster.awake = false"]) {
+for (const fragment of ["hasCampLineOfSight", "MonsterBrain", "lostSight", "disengageMonster", "monster.awake = false"]) {
   if (!serverSource.includes(fragment)) throw new Error(`Server chase contract missing: ${fragment}`);
 }
 if (!objectiveSource.includes("hasCampLineOfSight") || !objectiveSource.includes("this.monsterAwake = false")) {

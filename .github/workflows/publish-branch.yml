@@ -29,7 +29,7 @@ jobs:
 
       - name: Build browser client
         env:
-          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || 'https://camp-snallygaster-rebuild.onrender.com' }}
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL || '' }}
         run: npm run build
 
       - name: Verify compiled output

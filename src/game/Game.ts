@@ -1,11 +1,15 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
-import type { PlayerPose, PlayerState, SharedRoundState } from "../../shared/protocol";
+import { weightSpeedFactor } from "../../shared/loot";
+import type { NoiseMessage, PlayerPose, PlayerState, PropTransform, SharedRoundState } from "../../shared/protocol";
+import { Sfx } from "../audio/Sfx";
+import type { ProximityVoice } from "../voice/ProximityVoice";
 import { assetLibrary } from "./AssetLibrary";
 import { installCampCollisionGuard } from "./CollisionMap";
 import { addHighFidelitySetDressing } from "./HighFidelitySetDressing";
 import { InputManager } from "./Input";
 import { ObjectiveSystem } from "./ObjectiveSystem";
+import { LootSystem } from "./LootSystem";
 import { PhysicalProps } from "./PhysicalProps";
 import { CampWorld } from "./World";
 
@@ -16,6 +20,18 @@ const SPRINT_MULTIPLIER = 1.75;
 const SPRINT_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * SPRINT_MULTIPLIER; // 31.696875
 const CROUCH_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED * 0.5;
 const PLAYER_RADIUS = 0.38;
+const THREAT_TEXT: Record<string, string> = {
+  IDLE: "THE WOODS ARE QUIET",
+  ROAM: "SOMETHING IS MOVING IN THE TREES",
+  HEAR: "IT HEARD SOMETHING",
+  INVESTIGATE: "IT'S INVESTIGATING A NOISE",
+  SUSPICIOUS: "IT'S LOOKING RIGHT AT YOU… DON'T MOVE",
+  SPOT: "IT SEES YOU",
+  CHASE: "RUN!",
+  ATTACK: "RUN!",
+  SEARCH: "IT'S HUNTING FOR YOU",
+  COOLDOWN: "IT RETREATS INTO THE DARK",
+};
 
 export class Game {
   private renderer!: THREE.WebGLRenderer;
@@ -26,6 +42,8 @@ export class Game {
   private world!: CampWorld;
   private objectives!: ObjectiveSystem;
   private props!: PhysicalProps;
+  private loot!: LootSystem;
+  private dropListener: (() => void) | null = null;
   private flashlight!: THREE.SpotLight;
   private flashlightTarget!: THREE.Object3D;
   private flashlightOn = false;
@@ -33,14 +51,27 @@ export class Game {
   private running = false;
   private roundEnded = false;
   private lastTime = 0;
-  private yaw = Math.PI;
+  private yaw = 0;
   private pitch = -0.08;
   private lastPoseEmit = 0;
   private poseListener: ((pose: PlayerPose) => void) | null = null;
   private interactListener: ((targetId?: string) => void) | null = null;
   private sharedRound: SharedRoundState | null = null;
+  private lobbyListener: (() => void) | null = null;
+  private isHost = false;
+  private sfx = new Sfx();
+  private noiseListener: ((noise: NoiseMessage) => void) | null = null;
+  private propsListener: ((props: PropTransform[]) => void) | null = null;
+  private lastStepNoise = 0;
+  private lastVoiceNoise = 0;
+  private lastPropSend = 0;
+  private lastMonsterState = "IDLE";
+  private localPlayerId: string | null = null;
+  private resultsShown = false;
   private remotePlayers = new Map<string, THREE.Group>();
-  private respawnPose: PlayerPose = { x: 0, y: 1.4, z: 27, yaw: Math.PI };
+  private voice: ProximityVoice | null = null;
+  private readonly voiceForward = new THREE.Vector3();
+  private respawnPose: PlayerPose = { x: 0, y: 1.4, z: 25.5, yaw: 0 };
   private interactionRay = new THREE.Raycaster();
   private interactionTargetId: string | null = null;
   private interactionPrompt = "";
@@ -67,6 +98,11 @@ export class Game {
     addHighFidelitySetDressing(this.world.scene, this.mobile);
     this.objectives = new ObjectiveSystem(this.world.scene, this.mobile);
     this.props = new PhysicalProps(this.world.scene, this.physics, this.mobile);
+    this.props.onNoise((noise) => {
+      if (this.networked) this.noiseListener?.(noise);
+      else this.sfx.impact(noise.material, noise.loudness, noise, this.player.position);
+    });
+    this.loot = new LootSystem(this.world.scene, this.mobile);
     this.camera = new THREE.PerspectiveCamera(72, 1, 0.08, 190);
     this.camera.rotation.order = "YXZ";
 
@@ -89,12 +125,17 @@ export class Game {
       <div class="hud-card mission-card">
         <div class="hud-kicker">CAMP SNALLYGASTER • 1993</div>
         <div id="objectiveText" class="hud-objective">CAMPERS SAFE 0 / 7</div>
+        <div id="lootText" class="hud-loot"></div>
         <div id="threatText" class="hud-threat">THE WOODS ARE QUIET</div>
       </div>
       <div class="control-help">WASD MOVE · HOLD SHIFT SPRINT · CTRL CROUCH · SPACE JUMP · E INTERACT · LMB USE · G DROP · RMB SCAN · ESC MENU</div>
+      <div id="micHud" class="mic-hud">🎙 …</div>
+      <div id="heldText" class="held-text"></div>
       <div id="promptText" class="game-prompt"></div>
       <div class="crosshair"></div>
-      <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p></div></div>
+      <div id="countdownText" class="countdown hidden"></div>
+      <div id="downedText" class="downed hidden">YOU WERE CAUGHT · WATCH YOUR FRIENDS</div>
+      <div id="roundEnd" class="round-end hidden"><div><h2 id="roundEndTitle">EVACUATION COMPLETE</h2><p id="roundEndText"></p><div id="roundEndStats" class="results-grid"></div><div id="roundEndAwards" class="results-awards"></div><button id="roundEndLobby" class="primary hidden" type="button">BACK TO LOBBY</button></div></div>
     `;
     this.mount.appendChild(hud);
 
@@ -103,6 +144,7 @@ export class Game {
     installCampCollisionGuard(this.physics, PLAYER_RADIUS);
     this.createFlashlight();
     this.resize();
+    this.sfx.startAmbience();
 
     addEventListener("resize", this.resizeHandler, { passive: true });
     document.addEventListener("visibilitychange", this.visibilityHandler);
@@ -127,12 +169,26 @@ export class Game {
     this.player?.velocity.setZero();
   }
 
+  setVoice(voice: ProximityVoice | null) { this.voice = voice; }
   onPose(callback: (pose: PlayerPose) => void) { this.poseListener = callback; }
+  onDropLoot(callback: () => void) { this.dropListener = callback; }
+  onNoise(callback: (noise: NoiseMessage) => void) { this.noiseListener = callback; }
+  onProps(callback: (props: PropTransform[]) => void) { this.propsListener = callback; }
+  receiveNoise(noise: NoiseMessage & { by: string }) {
+    if (noise.source === "step" || noise.source === "voice") return;
+    this.sfx.impact(noise.material, noise.loudness, noise, this.player.position);
+  }
+  receiveProps(props: PropTransform[]) { this.props?.applyRemote(props); }
+  onReturnToLobby(callback: () => void) { this.lobbyListener = callback; }
+  setIsHost(value: boolean) { this.isHost = value; }
   onInteract(callback: (targetId?: string) => void) { this.interactListener = callback; }
+
+  setLocalPlayerId(id: string | null) { this.localPlayerId = id; }
 
   setSharedRoundState(state: SharedRoundState) {
     this.sharedRound = state;
     this.world?.updateDoors(state.doors);
+    this.loot?.sync(state.loot ?? []);
   }
 
   setLocalPose(pose: PlayerPose) {
@@ -141,7 +197,7 @@ export class Game {
       x: Number.isFinite(pose.x) ? pose.x : 0,
       y: Number.isFinite(pose.y) ? pose.y : 1.4,
       z: Number.isFinite(pose.z) ? pose.z : 27,
-      yaw: Number.isFinite(pose.yaw) ? pose.yaw : Math.PI,
+      yaw: Number.isFinite(pose.yaw) ? pose.yaw : 0,
     };
     this.respawnPose = safePose;
     this.player.position.set(safePose.x, safePose.y, safePose.z);
@@ -151,6 +207,7 @@ export class Game {
   }
 
   setRemotePlayers(players: PlayerState[], localPlayerId: string | null) {
+    this.localPlayerId = localPlayerId;
     const seen = new Set<string>();
     for (const player of players) {
       if (player.id === localPlayerId) continue;
@@ -162,15 +219,9 @@ export class Game {
         avatar.position.copy(target);
         this.remotePlayers.set(player.id, avatar);
         this.world.scene.add(avatar);
-      } else {
-        const previous = avatar.position.clone();
-        avatar.position.lerp(target, 0.5);
-        const moved = previous.distanceToSquared(avatar.position) > 0.0008;
-        avatar.userData.walkPhase = (avatar.userData.walkPhase ?? 0) + (moved ? 0.34 : 0.08);
-        const visual = avatar.getObjectByName("counselor-visual");
-        if (visual) visual.position.y = moved ? Math.abs(Math.sin(avatar.userData.walkPhase)) * 0.025 : 0;
       }
-      avatar.rotation.y = player.pose.yaw;
+      avatar.userData.target = target;
+      avatar.userData.yaw = player.pose.yaw;
     }
     for (const [id, avatar] of this.remotePlayers) {
       if (!seen.has(id)) {
@@ -180,10 +231,42 @@ export class Game {
     }
   }
 
+  private updateVoice() {
+    if (!this.voice) return;
+    const positions = new Map<string, { x: number; y: number; z: number }>();
+    for (const [id, avatar] of this.remotePlayers) positions.set(id, { x: avatar.position.x, y: avatar.position.y + 1.6, z: avatar.position.z });
+    this.camera.getWorldDirection(this.voiceForward);
+    const p = this.camera.position;
+    this.voice.update({ x: p.x, y: p.y, z: p.z }, { x: this.voiceForward.x, y: this.voiceForward.y, z: this.voiceForward.z }, positions, this.sharedRound?.doors ?? []);
+    const hud = this.mount.querySelector<HTMLElement>("#micHud");
+    if (hud) hud.classList.toggle("speaking", this.voice.localSpeaking);
+  }
+
+  private updateRemotePlayers(dt: number) {
+    const blend = 1 - Math.exp(-14 * dt);
+    for (const avatar of this.remotePlayers.values()) {
+      const target = avatar.userData.target as THREE.Vector3 | undefined;
+      if (!target) continue;
+      const previous = avatar.position.clone();
+      if (previous.distanceToSquared(target) > 100) avatar.position.copy(target);
+      else avatar.position.lerp(target, blend);
+      const moved = previous.distanceToSquared(avatar.position) > 0.00002;
+      avatar.userData.walkPhase = (avatar.userData.walkPhase ?? 0) + (moved ? 0.34 : 0.08);
+      const visual = avatar.getObjectByName("counselor-visual");
+      if (visual) visual.position.y = moved ? Math.abs(Math.sin(avatar.userData.walkPhase)) * 0.025 : 0;
+      const yaw = avatar.userData.yaw as number;
+      let delta = yaw - avatar.rotation.y;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      avatar.rotation.y += delta * blend;
+    }
+  }
+
   destroy() {
     this.pause();
     removeEventListener("resize", this.resizeHandler);
     document.removeEventListener("visibilitychange", this.visibilityHandler);
+    this.loot?.destroy();
+    this.sfx.stop();
     this.input?.destroy();
     this.objectives?.destroy();
     this.renderer?.dispose();
@@ -282,6 +365,16 @@ export class Game {
     const vz = (-rightInput * sin - forwardInput * cos) * speed;
     this.player.velocity.x = vx;
     this.player.velocity.z = vz;
+    const carried = this.carriedLoot();
+    if (carried.length) {
+      const factor = weightSpeedFactor(carried.reduce((sum, item) => sum + item.weight, 0));
+      this.player.velocity.x *= factor;
+      this.player.velocity.z *= factor;
+    }
+    if (this.networked && this.localPlayerId && this.sharedRound?.downed.includes(this.localPlayerId)) {
+      this.player.velocity.x = 0;
+      this.player.velocity.z = 0;
+    }
 
     if (input.flashlightPressed) this.flashlightOn = !this.flashlightOn;
 
@@ -291,6 +384,9 @@ export class Game {
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
     this.props.update(this.camera, dt);
+    this.loot.update(dt);
+    this.updateRemotePlayers(dt);
+    this.updateVoice();
 
     this.physics.step(1 / 120, dt, this.mobile ? 5 : 8);
 
@@ -316,7 +412,9 @@ export class Game {
       this.interactListener?.();
     }
 
-    if (input.dropPressed) this.props.dropHeld();
+    if (input.usePressed && this.props.isHolding) this.props.throwHeld(this.camera);
+    else if (input.dropPressed && !this.props.dropHeld() && this.networked) this.dropListener?.();
+    if (this.networked) this.emitNetworkEvents(now, moving, sprinting, input.crouch);
 
     const playerPosition = new THREE.Vector3(p.x, p.y, p.z);
     const objective = this.networked
@@ -325,24 +423,48 @@ export class Game {
     const prompt = this.interactionPrompt || objective.prompt;
     this.updateHud(objective.safe, objective.total, prompt, objective.monsterAwake);
 
-    if (!this.roundEnded && (objective.complete || objective.caught)) {
+    if (this.networked) this.updateNetworkedOverlays();
+    else if (!this.roundEnded && (objective.complete || objective.caught)) {
       this.roundEnded = true;
       this.showRoundEnd(objective.complete);
     }
 
     if (this.poseListener && now - this.lastPoseEmit >= 70) {
       this.lastPoseEmit = now;
-      this.poseListener({ x: p.x, y: p.y, z: p.z, yaw: this.yaw });
+      this.poseListener({ x: p.x, y: p.y, z: p.z, yaw: this.yaw, flashlight: this.flashlightOn, crouch: input.crouch, sprint: sprinting });
     }
 
     this.renderer.render(this.world.scene, this.camera);
     this.frameId = requestAnimationFrame((time) => this.loop(time));
   }
 
+  private carriedLoot() {
+    if (!this.localPlayerId || !this.sharedRound) return [];
+    return (this.sharedRound.loot ?? []).filter((item) => item.heldBy === this.localPlayerId);
+  }
+
+  private emitNetworkEvents(now: number, moving: boolean, sprinting: boolean, crouching: boolean) {
+    const p = this.player.position;
+    if (moving && !crouching && now - this.lastStepNoise > 600) {
+      this.lastStepNoise = now;
+      this.noiseListener?.({ x: p.x, z: p.z, loudness: sprinting ? 15 : 6, material: "grass", source: "step" });
+    }
+    const level = this.voice?.localLevel ?? 0;
+    if (level > 0.1 && now - this.lastVoiceNoise > 900) {
+      this.lastVoiceNoise = now;
+      this.noiseListener?.({ x: p.x, z: p.z, loudness: Math.min(48, 10 + level * 90), material: "voice", source: "voice" });
+    }
+    if (now - this.lastPropSend > 100) {
+      this.lastPropSend = now;
+      const outgoing = this.props.collectOutgoing();
+      if (outgoing.length) this.propsListener?.(outgoing);
+    }
+  }
+
   private updateInteraction() {
     this.interactionTargetId = null;
     this.interactionPrompt = "";
-    const candidates = [...this.world.interactables, ...this.props.interactables];
+    const candidates = [...this.world.interactables, ...this.props.interactables, ...this.loot.interactables];
     if (candidates.length === 0) return;
 
     this.interactionRay.setFromCamera(new THREE.Vector2(0, 0), this.camera);
@@ -372,7 +494,92 @@ export class Game {
     const threat = this.mount.querySelector<HTMLElement>("#threatText");
     if (objective) objective.textContent = `CAMPERS SAFE ${safe} / ${total}`;
     if (promptElement) promptElement.textContent = prompt;
-    if (threat) threat.textContent = monsterAwake ? "SOMETHING IS MOVING IN THE TREES" : "THE WOODS ARE QUIET";
+    const state = this.sharedRound?.monster.state ?? (monsterAwake ? "ROAM" : "IDLE");
+    if (state === "SPOT" && this.lastMonsterState !== "SPOT") this.sfx.stinger();
+    this.lastMonsterState = state;
+    if (threat) {
+      threat.textContent = THREAT_TEXT[state] ?? "THE WOODS ARE QUIET";
+      threat.dataset.level = state;
+    }
+    const heldElement = this.mount.querySelector<HTMLElement>("#heldText");
+    const carried = this.carriedLoot();
+    const weight = carried.reduce((sum, item) => sum + item.weight, 0);
+    const value = carried.reduce((sum, item) => sum + item.value, 0);
+    const bag = carried.length ? `CARRYING ${carried.map((item) => item.name.toUpperCase()).join(" · ")} · ${weight} LB · $${value} · G DROP` : "";
+    if (heldElement) heldElement.textContent = this.props.heldLabel ? `HOLDING ${this.props.heldLabel} · LMB THROW · G DROP` : bag;
+    const lootElement = this.mount.querySelector<HTMLElement>("#lootText");
+    if (lootElement) lootElement.textContent = this.sharedRound ? `LOOT SECURED $${this.sharedRound.lootDelivered ?? 0}` : "";
+  }
+
+  private updateNetworkedOverlays() {
+    const round = this.sharedRound;
+    const countdown = this.mount.querySelector<HTMLElement>("#countdownText");
+    const downed = this.mount.querySelector<HTMLElement>("#downedText");
+    if (!round) return;
+    if (countdown) {
+      const active = round.extraction.active && !round.results;
+      countdown.classList.toggle("hidden", !active);
+      if (active) countdown.textContent = `BUS DEPARTING IN ${Math.ceil(round.extraction.remaining)} · GET ON BOARD`;
+    }
+    const me = this.localPlayerId;
+    downed?.classList.toggle("hidden", !(me && round.downed.includes(me)) || Boolean(round.results));
+    if (round.results && !this.resultsShown) {
+      this.resultsShown = true;
+      this.roundEnded = true;
+      document.exitPointerLock?.();
+      this.showResults(round);
+    }
+    if (!round.results && this.resultsShown) {
+      this.resultsShown = false;
+      this.roundEnded = false;
+    }
+  }
+
+  private showResults(round: SharedRoundState) {
+    const results = round.results;
+    const overlay = this.mount.querySelector<HTMLElement>("#roundEnd");
+    if (!results || !overlay) return;
+    const set = (id: string, text: string) => { const el = this.mount.querySelector<HTMLElement>(id); if (el) el.textContent = text; };
+    set("#roundEndTitle", results.outcome === "EXTRACTED" ? "THE BUS PULLS AWAY" : "NOBODY MADE IT BACK");
+    set("#roundEndText", results.outcome === "EXTRACTED" ? "Headlights on. Doors shut. Nobody is talking about it yet." : "The camp keeps what it catches. Try again.");
+    const stats = this.mount.querySelector<HTMLElement>("#roundEndStats");
+    if (stats) {
+      stats.replaceChildren();
+      const rows: Array<[string, string]> = [
+        ["PLAYERS SAVED", `${results.playersSaved} / ${results.playersTotal}`],
+        ["CAMPERS SAVED", String(results.campersSaved)],
+        ["CAMPERS LOST", String(results.campersLost)],
+        ["LOOT VALUE", `$${results.lootValue}`],
+        ["SECRETS FOUND", String(results.secrets)],
+        ["DEATHS", String(results.deaths)],
+      ];
+      for (const [label, value] of rows) {
+        const cell = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = value;
+        const span = document.createElement("span");
+        span.textContent = label;
+        cell.append(strong, span);
+        stats.append(cell);
+      }
+    }
+    const awards = this.mount.querySelector<HTMLElement>("#roundEndAwards");
+    if (awards) {
+      awards.replaceChildren();
+      for (const award of results.awards) {
+        const line = document.createElement("p");
+        line.textContent = `🏅 ${award.title} — ${award.playerName} (${award.detail})`;
+        awards.append(line);
+      }
+    }
+    const button = this.mount.querySelector<HTMLButtonElement>("#roundEndLobby");
+    if (button) {
+      button.classList.remove("hidden");
+      button.disabled = !this.isHost;
+      button.textContent = this.isHost ? "BACK TO LOBBY" : "WAITING FOR HOST…";
+      button.onclick = () => this.lobbyListener?.();
+    }
+    overlay.classList.remove("hidden");
   }
 
   private showRoundEnd(won: boolean) {
