@@ -37,9 +37,12 @@ export class CampWorld {
   private readonly mustard = new THREE.MeshStandardMaterial({ color: 0xd8a83f, roughness: 0.58, metalness: 0.04 });
   private readonly metal = new THREE.MeshStandardMaterial({ color: 0x5c6461, roughness: 0.42, metalness: 0.48 });
 
+  private dirt: THREE.CanvasTexture | null | undefined;
+
   constructor(private physics: CANNON.World, private mobile: boolean) {
-    this.scene.background = new THREE.Color(0x14221f);
-    this.scene.fog = new THREE.FogExp2(0x14221f, mobile ? 0.012 : 0.009);
+    this.scene.background = new THREE.Color(0x24394a);
+    this.scene.fog = new THREE.FogExp2(0x2a3d46, mobile ? 0.011 : 0.0085);
+    this.addSky();
     this.addLights();
     this.addGround();
     this.addCamp();
@@ -72,7 +75,7 @@ export class CampWorld {
   }
 
   private addLights() {
-    this.scene.add(new THREE.HemisphereLight(0x9fb5b1, 0x101915, this.mobile ? 1.0 : 1.25));
+    this.scene.add(new THREE.HemisphereLight(0xb9b4c8, 0x1d2a1f, this.mobile ? 1.25 : 1.5));
     const moon = new THREE.DirectionalLight(0xbfd6d8, this.mobile ? 1.4 : 2.0);
     moon.position.set(-34, 52, 24);
     moon.castShadow = !this.mobile;
@@ -83,14 +86,49 @@ export class CampWorld {
       moon.shadow.camera.near = 1; moon.shadow.camera.far = 140; moon.shadow.bias = -0.0002;
     }
     this.scene.add(moon);
-    const dusk = new THREE.DirectionalLight(0xe8a25b, 0.75); dusk.position.set(52, 18, -65); this.scene.add(dusk);
+    const dusk = new THREE.DirectionalLight(0xf0a05a, 1.6); dusk.position.set(52, 18, -65); this.scene.add(dusk);
     for (const [x, z] of [[-8, 22], [0, -20], [-24, 7], [24, 7]] as const) {
       const lamp = new THREE.PointLight(0xffb45d, this.mobile ? 1.25 : 2.2, 18, 2); lamp.position.set(x, 2.3, z); this.scene.add(lamp);
     }
   }
 
+  private noiseTexture(base: [number, number, number], variance: number, repeat: number) {
+    const size = 256, canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    const image = ctx.createImageData(size, size);
+    for (let i = 0; i < size * size; i += 1) {
+      const n = (Math.random() - 0.5) * variance, blade = Math.random() < 0.06 ? variance * 0.7 : 0;
+      image.data[i * 4] = Math.max(0, Math.min(255, base[0] + n * 0.7 + blade * 0.3));
+      image.data[i * 4 + 1] = Math.max(0, Math.min(255, base[1] + n + blade));
+      image.data[i * 4 + 2] = Math.max(0, Math.min(255, base[2] + n * 0.6));
+      image.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.repeat.set(repeat, repeat);
+    texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = this.mobile ? 2 : 8;
+    return texture;
+  }
+
+  private addSky() {
+    const geometry = new THREE.SphereGeometry(170, 24, 16);
+    const colors: number[] = [];
+    const top = new THREE.Color(0x10182b), mid = new THREE.Color(0x4b4a6b), horizon = new THREE.Color(0xe08a4f);
+    const position = geometry.getAttribute("position");
+    for (let i = 0; i < position.count; i += 1) {
+      const t = Math.max(0, position.getY(i) / 170);
+      const color = t < 0.25 ? horizon.clone().lerp(mid, t / 0.25) : mid.clone().lerp(top, Math.min(1, (t - 0.25) / 0.6));
+      colors.push(color.r, color.g, color.b);
+    }
+    geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    const sky = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    sky.name = "dusk-sky"; sky.renderOrder = -1; this.scene.add(sky);
+  }
+
   private addGround() {
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0x304a38, roughness: 0.98 }));
+    const grass = this.noiseTexture([58, 88, 54], 46, 60);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: grass ? 0xffffff : 0x3b5a3f, map: grass, roughness: 0.98 }));
     ground.rotation.x = -Math.PI / 2; ground.receiveShadow = !this.mobile; this.scene.add(ground);
     const trails: ReadonlyArray<readonly [number, number, number, number, number]> = [
       [0, 21, 11, 54, 0], [0, -8, 8, 54, 0], [-16, 3, 7, 38, Math.PI / 2.35],
@@ -103,7 +141,8 @@ export class CampWorld {
   }
 
   private addTrail(x: number, z: number, width: number, length: number, rotation: number) {
-    const trail = new THREE.Mesh(new THREE.PlaneGeometry(width, length), new THREE.MeshStandardMaterial({ color: 0x756347, roughness: 1 }));
+    this.dirt ??= this.noiseTexture([128, 106, 76], 34, 3);
+    const trail = new THREE.Mesh(new THREE.PlaneGeometry(width, length), new THREE.MeshStandardMaterial({ color: this.dirt ? 0xffffff : 0x756347, map: this.dirt, roughness: 1 }));
     trail.rotation.x = -Math.PI / 2; trail.rotation.z = rotation; trail.position.set(x, 0.018, z); trail.receiveShadow = !this.mobile; this.scene.add(trail);
   }
 

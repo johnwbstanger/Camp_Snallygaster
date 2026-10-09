@@ -17,7 +17,7 @@ app.innerHTML = `
       <input id="playerName" class="field" maxlength="18" value="Counselor" autocomplete="nickname" />
       <button id="playSolo" class="primary">ENTER CAMP SOLO</button>
       <div class="network-row"><button id="createCamp">CREATE CAMP</button><button id="showJoin">JOIN CAMP</button></div>
-      <div id="joinRow" class="join-row hidden"><input id="roomCode" class="field" maxlength="8" placeholder="PINE-42" autocapitalize="characters" /><button id="joinCamp">JOIN</button></div>
+      <div id="joinRow" class="join-row hidden"><input id="roomCode" class="field" maxlength="8" placeholder="PINE214" autocapitalize="characters" /><button id="joinCamp">JOIN</button></div>
       <p id="status" class="status">Ready. Multiplayer camps support up to 15 counselors.</p>
     </section>
 

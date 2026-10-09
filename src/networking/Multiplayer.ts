@@ -20,6 +20,7 @@ export class MultiplayerClient {
   private onRoundCallback: ((state: SharedRoundState) => void) | null = null;
   private onStartCallback: (() => void) | null = null;
   private onErrorCallback: ((message: string) => void) | null = null;
+  private heartbeat: number | null = null;
 
   get connected() {
     return this.socket?.readyState === WebSocket.OPEN;
@@ -59,6 +60,7 @@ export class MultiplayerClient {
         settled = true;
         window.clearTimeout(timeout);
         this.bindSocket(socket);
+        this.startHeartbeat(socket);
         resolve();
       }, { once: true });
 
@@ -80,7 +82,7 @@ export class MultiplayerClient {
 
   async joinCamp(roomCode: string, name: string) {
     await this.connect();
-    return this.awaitWelcome({ type: "join", roomCode: roomCode.trim().toUpperCase(), name: cleanName(name) });
+    return this.awaitWelcome({ type: "join", roomCode: roomCode.toUpperCase().replace(/[^A-Z0-9]/g, ""), name: cleanName(name) });
   }
 
   startCamp() { this.send({ type: "start" }); }
@@ -94,6 +96,7 @@ export class MultiplayerClient {
   onError(callback: (message: string) => void) { this.onErrorCallback = callback; }
 
   close() {
+    this.stopHeartbeat();
     if (this.pendingWelcome) window.clearTimeout(this.pendingWelcome.timer);
     this.pendingWelcome = null;
     this.roomInfo = null;
@@ -183,6 +186,7 @@ export class MultiplayerClient {
     });
 
     socket.addEventListener("close", () => {
+      if (this.socket === socket) this.stopHeartbeat();
       if (this.pendingWelcome) {
         window.clearTimeout(this.pendingWelcome.timer);
         this.pendingWelcome.reject(new Error("Multiplayer server disconnected"));
@@ -191,6 +195,18 @@ export class MultiplayerClient {
       if (this.socket === socket) this.socket = null;
       this.onErrorCallback?.("Multiplayer server disconnected");
     });
+  }
+
+  private startHeartbeat(socket: WebSocket) {
+    this.stopHeartbeat();
+    this.heartbeat = window.setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping", at: Date.now() }));
+    }, 20000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeat !== null) window.clearInterval(this.heartbeat);
+    this.heartbeat = null;
   }
 
   private send(message: ClientMessage) {

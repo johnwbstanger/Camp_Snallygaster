@@ -24,6 +24,7 @@ type Room = {
   players: Map<string, PlayerState>;
   sockets: Map<string, WebSocket>;
   round: SharedRoundState;
+  poseDirty?: boolean;
 };
 
 type DoorDefinition = { id: string; x: number; z: number };
@@ -118,7 +119,7 @@ wss.on("connection", (socket) => {
       const player = room.players.get(meta.playerId);
       if (!player) return;
       player.pose = sanitizePose(message.pose);
-      broadcast(room, { type: "snapshot", players: [...room.players.values()] }, socket);
+      room.poseDirty = true;
       return;
     }
 
@@ -137,7 +138,13 @@ wss.on("connection", (socket) => {
 });
 
 const tick = setInterval(() => {
-  for (const room of rooms.values()) if (room.round.phase === "ACTIVE") updateRound(room, 0.1);
+  for (const room of rooms.values()) {
+    if (room.round.phase === "ACTIVE") updateRound(room, 0.1);
+    if (room.poseDirty) {
+      room.poseDirty = false;
+      broadcast(room, { type: "snapshot", players: [...room.players.values()] });
+    }
+  }
 }, 100);
 tick.unref();
 
@@ -190,8 +197,8 @@ function addPlayer(room: Room, socket: WebSocket, rawName: string) {
     pose: {
       x: Math.sin(angle) * radius,
       y: 1.4,
-      z: 27 + Math.cos(angle) * radius,
-      yaw: angle + Math.PI,
+      z: 25.5 + Math.cos(angle) * radius,
+      yaw: 0,
     },
   };
   room.players.set(id, player);
@@ -384,10 +391,10 @@ function distance2D(a: { x: number; z: number }, b: { x: number; z: number }) {
 }
 
 function generateRoomCode() {
-  const words = ["PINE", "LAKE", "TRAIL", "OWL", "MOSS", "FIRE", "CAMP", "BEAR"];
-  return `${words[Math.floor(Math.random() * words.length)]}-${Math.floor(10 + Math.random() * 90)}`;
+  const words = ["PINE", "LAKE", "MOSS", "FIRE", "CAMP", "BEAR", "OWL", "TENT"];
+  return `${words[Math.floor(Math.random() * words.length)]}${Math.floor(100 + Math.random() * 900)}`;
 }
 
 function normalizeRoomCode(code: string) {
-  return String(code || "").trim().toUpperCase();
+  return String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }

@@ -33,14 +33,14 @@ export class Game {
   private running = false;
   private roundEnded = false;
   private lastTime = 0;
-  private yaw = Math.PI;
+  private yaw = 0;
   private pitch = -0.08;
   private lastPoseEmit = 0;
   private poseListener: ((pose: PlayerPose) => void) | null = null;
   private interactListener: ((targetId?: string) => void) | null = null;
   private sharedRound: SharedRoundState | null = null;
   private remotePlayers = new Map<string, THREE.Group>();
-  private respawnPose: PlayerPose = { x: 0, y: 1.4, z: 27, yaw: Math.PI };
+  private respawnPose: PlayerPose = { x: 0, y: 1.4, z: 25.5, yaw: 0 };
   private interactionRay = new THREE.Raycaster();
   private interactionTargetId: string | null = null;
   private interactionPrompt = "";
@@ -141,7 +141,7 @@ export class Game {
       x: Number.isFinite(pose.x) ? pose.x : 0,
       y: Number.isFinite(pose.y) ? pose.y : 1.4,
       z: Number.isFinite(pose.z) ? pose.z : 27,
-      yaw: Number.isFinite(pose.yaw) ? pose.yaw : Math.PI,
+      yaw: Number.isFinite(pose.yaw) ? pose.yaw : 0,
     };
     this.respawnPose = safePose;
     this.player.position.set(safePose.x, safePose.y, safePose.z);
@@ -162,21 +162,34 @@ export class Game {
         avatar.position.copy(target);
         this.remotePlayers.set(player.id, avatar);
         this.world.scene.add(avatar);
-      } else {
-        const previous = avatar.position.clone();
-        avatar.position.lerp(target, 0.5);
-        const moved = previous.distanceToSquared(avatar.position) > 0.0008;
-        avatar.userData.walkPhase = (avatar.userData.walkPhase ?? 0) + (moved ? 0.34 : 0.08);
-        const visual = avatar.getObjectByName("counselor-visual");
-        if (visual) visual.position.y = moved ? Math.abs(Math.sin(avatar.userData.walkPhase)) * 0.025 : 0;
       }
-      avatar.rotation.y = player.pose.yaw;
+      avatar.userData.target = target;
+      avatar.userData.yaw = player.pose.yaw;
     }
     for (const [id, avatar] of this.remotePlayers) {
       if (!seen.has(id)) {
         avatar.removeFromParent();
         this.remotePlayers.delete(id);
       }
+    }
+  }
+
+  private updateRemotePlayers(dt: number) {
+    const blend = 1 - Math.exp(-14 * dt);
+    for (const avatar of this.remotePlayers.values()) {
+      const target = avatar.userData.target as THREE.Vector3 | undefined;
+      if (!target) continue;
+      const previous = avatar.position.clone();
+      if (previous.distanceToSquared(target) > 100) avatar.position.copy(target);
+      else avatar.position.lerp(target, blend);
+      const moved = previous.distanceToSquared(avatar.position) > 0.00002;
+      avatar.userData.walkPhase = (avatar.userData.walkPhase ?? 0) + (moved ? 0.34 : 0.08);
+      const visual = avatar.getObjectByName("counselor-visual");
+      if (visual) visual.position.y = moved ? Math.abs(Math.sin(avatar.userData.walkPhase)) * 0.025 : 0;
+      const yaw = avatar.userData.yaw as number;
+      let delta = yaw - avatar.rotation.y;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      avatar.rotation.y += delta * blend;
     }
   }
 
@@ -291,6 +304,7 @@ export class Game {
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
     this.props.update(this.camera, dt);
+    this.updateRemotePlayers(dt);
 
     this.physics.step(1 / 120, dt, this.mobile ? 5 : 8);
 
