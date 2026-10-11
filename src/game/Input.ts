@@ -59,8 +59,10 @@ export class InputManager {
       - (this.keys.has("KeyS") || this.keys.has("ArrowDown") ? 1 : 0);
     const keyboardRight = (this.keys.has("KeyD") || this.keys.has("ArrowRight") ? 1 : 0)
       - (this.keys.has("KeyA") || this.keys.has("ArrowLeft") ? 1 : 0);
-    const forward = Math.max(-1, Math.min(1, keyboardForward - this.moveY));
-    const right = Math.max(-1, Math.min(1, keyboardRight + this.moveX));
+    let forward = keyboardForward - this.moveY;
+    let right = keyboardRight + this.moveX;
+    const magnitude = Math.hypot(forward, right);
+    if (magnitude > 1) { forward /= magnitude; right /= magnitude; }
     const crouch = this.keys.has("ControlLeft") || this.keys.has("ControlRight") || this.touchCrouch;
     const sprint = !crouch && (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || this.touchSprint);
 
@@ -151,16 +153,19 @@ export class InputManager {
     const moveStart = (event: PointerEvent) => {
       if (event.pointerType === "mouse" || this.movePointer !== null) return;
       this.movePointer = event.pointerId;
+      event.preventDefault();
       movePad.setPointerCapture(event.pointerId);
       this.updateMove(event, movePad, knob);
     };
     const moveMove = (event: PointerEvent) => {
       if (event.pointerId !== this.movePointer) return;
+      event.preventDefault();
       this.updateMove(event, movePad, knob);
     };
     const moveEnd = (event: PointerEvent) => {
       if (event.pointerId !== this.movePointer) return;
       this.movePointer = null;
+      if (movePad.hasPointerCapture(event.pointerId)) movePad.releasePointerCapture(event.pointerId);
       this.moveX = 0;
       this.moveY = 0;
       knob.style.transform = "translate(0px, 0px)";
@@ -171,17 +176,22 @@ export class InputManager {
       this.lookPointer = event.pointerId;
       this.lookLastX = event.clientX;
       this.lookLastY = event.clientY;
+      event.preventDefault();
       lookPad.setPointerCapture(event.pointerId);
     };
     const lookMove = (event: PointerEvent) => {
       if (event.pointerId !== this.lookPointer) return;
+      event.preventDefault();
       this.lookX += (event.clientX - this.lookLastX) * 1.4;
       this.lookY += (event.clientY - this.lookLastY) * 1.4;
       this.lookLastX = event.clientX;
       this.lookLastY = event.clientY;
     };
     const lookEnd = (event: PointerEvent) => {
-      if (event.pointerId === this.lookPointer) this.lookPointer = null;
+      if (event.pointerId === this.lookPointer) {
+        this.lookPointer = null;
+        if (lookPad.hasPointerCapture(event.pointerId)) lookPad.releasePointerCapture(event.pointerId);
+      }
     };
 
     const use = (event: PointerEvent) => { event.preventDefault(); this.interactPressed = true; };
@@ -203,10 +213,12 @@ export class InputManager {
     movePad.addEventListener("pointermove", moveMove);
     movePad.addEventListener("pointerup", moveEnd);
     movePad.addEventListener("pointercancel", moveEnd);
+    movePad.addEventListener("lostpointercapture", moveEnd);
     lookPad.addEventListener("pointerdown", lookStart);
     lookPad.addEventListener("pointermove", lookMove);
     lookPad.addEventListener("pointerup", lookEnd);
     lookPad.addEventListener("pointercancel", lookEnd);
+    lookPad.addEventListener("lostpointercapture", lookEnd);
     useButton.addEventListener("pointerdown", use);
     lightButton.addEventListener("pointerdown", light);
     runButton.addEventListener("pointerdown", toggleRun);
@@ -217,10 +229,12 @@ export class InputManager {
       () => movePad.removeEventListener("pointermove", moveMove),
       () => movePad.removeEventListener("pointerup", moveEnd),
       () => movePad.removeEventListener("pointercancel", moveEnd),
+      () => movePad.removeEventListener("lostpointercapture", moveEnd),
       () => lookPad.removeEventListener("pointerdown", lookStart),
       () => lookPad.removeEventListener("pointermove", lookMove),
       () => lookPad.removeEventListener("pointerup", lookEnd),
       () => lookPad.removeEventListener("pointercancel", lookEnd),
+      () => lookPad.removeEventListener("lostpointercapture", lookEnd),
       () => useButton.removeEventListener("pointerdown", use),
       () => lightButton.removeEventListener("pointerdown", light),
       () => runButton.removeEventListener("pointerdown", toggleRun),
@@ -264,19 +278,23 @@ export class InputManager {
   }
 
   private updateMove(event: PointerEvent, pad: HTMLElement, knob: HTMLElement) {
-    const rect = pad.getBoundingClientRect();
-    const centerX = Math.min(rect.left + 84, rect.right - 56);
-    const centerY = Math.max(rect.bottom - 84, rect.top + 56);
+    const joystick = knob.parentElement!;
+    const rect = joystick.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
     let dx = event.clientX - centerX;
     let dy = event.clientY - centerY;
-    const max = 44;
+    const max = Math.max(1, (rect.width - knob.getBoundingClientRect().width) / 2);
+    const deadzone = 0.1;
     const length = Math.hypot(dx, dy);
     if (length > max) {
       dx = (dx / length) * max;
       dy = (dy / length) * max;
     }
-    this.moveX = dx / max;
-    this.moveY = dy / max;
+    const strength = Math.hypot(dx, dy) / max;
+    const adjusted = strength <= deadzone ? 0 : (strength - deadzone) / (1 - deadzone);
+    this.moveX = strength ? (dx / max) * adjusted / strength : 0;
+    this.moveY = strength ? (dy / max) * adjusted / strength : 0;
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
   }
 }
