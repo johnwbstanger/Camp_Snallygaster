@@ -119,6 +119,7 @@ export class InputManager {
         if (event.button === 0) void this.canvas.requestPointerLock?.();
         return;
       }
+      if (event.button === 0) this.interactPressed = true;
       if (event.button === 0) this.usePressed = true;
       if (event.button === 2) this.scanPressed = true;
     };

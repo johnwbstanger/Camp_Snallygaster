@@ -512,7 +512,8 @@ export function createRoundState(phase: SharedRoundState["phase"]): SharedRoundS
   return {
     phase,
     campers: CAMPERS.map(([name, x, y, z], index): CamperState => ({
-      id: `camper-${index + 1}`, name, state: "HIDDEN", followingPlayerId: null, position: { x, y, z },
+      id: `camper-${index + 1}`, name, personality: index, mood: "HIDING", line: "", lineSeq: 0,
+      state: "HIDDEN", followingPlayerId: null, position: { x, y, z },
     })),
     doors: DOORS.map(({ id }): DoorState => ({ id, open: false })),
     monster: { kind: selected.id, x: MONSTER_HOME.x, y: MONSTER_HOME.y, z: MONSTER_HOME.z, awake: false, state: "IDLE" },
