@@ -3,6 +3,7 @@ import "./lobby.css";
 import type { SharedRoundState } from "../shared/protocol";
 import type { Game } from "./game/Game";
 import { MultiplayerClient, type RoomInfo } from "./networking/Multiplayer";
+import { ProximityVoice, type VoiceStatus } from "./voice/ProximityVoice";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app root");
@@ -17,7 +18,7 @@ app.innerHTML = `
       <input id="playerName" class="field" maxlength="18" value="Counselor" autocomplete="nickname" />
       <button id="playSolo" class="primary">ENTER CAMP SOLO</button>
       <div class="network-row"><button id="createCamp">CREATE CAMP</button><button id="showJoin">JOIN CAMP</button></div>
-      <div id="joinRow" class="join-row hidden"><input id="roomCode" class="field" maxlength="8" placeholder="PINE-42" autocapitalize="characters" /><button id="joinCamp">JOIN</button></div>
+      <div id="joinRow" class="join-row hidden"><input id="roomCode" class="field" maxlength="8" placeholder="PINE214" autocapitalize="characters" /><button id="joinCamp">JOIN</button></div>
       <p id="status" class="status">Ready. Multiplayer camps support up to 15 counselors.</p>
     </section>
 
@@ -28,6 +29,18 @@ app.innerHTML = `
         <div id="lobbyCount" class="lobby-count">0 / 15</div>
       </div>
       <div id="roster" class="roster lobby-roster"></div>
+      <div class="voice-panel">
+        <div class="voice-row">
+          <span id="voiceDot" class="voice-dot"></span>
+          <span id="voiceStatus" class="voice-status">Mic off</span>
+        </div>
+        <div class="voice-meter"><div id="voiceMeter" class="voice-meter-fill"></div></div>
+        <div class="voice-buttons">
+          <button id="enableMic" type="button">ENABLE MIC</button>
+          <button id="muteMic" type="button">MUTE (M)</button>
+        </div>
+        <p class="voice-hint">Proximity voice: nearby counselors are loud, far ones fade, walls and closed doors muffle.</p>
+      </div>
       <button id="startCamp" class="primary hidden">START EVACUATION</button>
       <p id="lobbyStatus" class="status">Waiting for counselors…</p>
     </section>
@@ -76,6 +89,11 @@ const startButton = document.querySelector<HTMLButtonElement>("#startCamp")!;
 const roomTitle = document.querySelector<HTMLElement>("#roomTitle")!;
 const lobbyCount = document.querySelector<HTMLElement>("#lobbyCount")!;
 const roster = document.querySelector<HTMLElement>("#roster")!;
+const voiceStatusEl = document.querySelector<HTMLElement>("#voiceStatus")!;
+const voiceDot = document.querySelector<HTMLElement>("#voiceDot")!;
+const voiceMeter = document.querySelector<HTMLElement>("#voiceMeter")!;
+const enableMicButton = document.querySelector<HTMLButtonElement>("#enableMic")!;
+const muteMicButton = document.querySelector<HTMLButtonElement>("#muteMic")!;
 const gameMenuToggle = document.querySelector<HTMLButtonElement>("#gameMenuToggle")!;
 const pauseMenu = document.querySelector<HTMLElement>("#pauseMenu")!;
 const resumeButton = document.querySelector<HTMLButtonElement>("#resumeGame")!;
@@ -89,6 +107,10 @@ let multiplayer: MultiplayerClient | null = null;
 let room: RoomInfo | null = null;
 let latestRound: SharedRoundState | null = null;
 let paused = false;
+const voice = new ProximityVoice();
+voice.onStatus(renderVoiceStatus);
+let voiceSession = false;
+if (new URLSearchParams(location.search).has("debug")) (window as unknown as { __snally: unknown }).__snally = { voice, round: () => latestRound, mp: () => multiplayer, game: () => game };
 
 function playerName() {
   return nameInput.value.trim().slice(0, 18) || "Counselor";
@@ -111,12 +133,19 @@ async function launchGame(networked: boolean) {
       game.setRemotePlayers(room.players, room.playerId);
       game.onPose((pose) => multiplayer?.sendPose(pose));
       game.onInteract((targetId) => multiplayer?.interact(targetId));
+      game.onDropLoot(() => multiplayer?.dropLoot());
+      game.onNoise((noise) => multiplayer?.sendNoise(noise));
+      game.onProps((props) => multiplayer?.sendProps(props));
+      game.onReturnToLobby(() => multiplayer?.resetToLobby());
+      game.setIsHost(room.hostId === room.playerId);
+      game.setVoice(voice);
       if (latestRound) game.setSharedRoundState(latestRound);
     }
 
     menu.classList.add("hidden");
     lobby.classList.add("hidden");
     viewport.classList.remove("hidden");
+    renderVoiceStatus(voice.status);
     gameMenuToggle.classList.remove("hidden");
     paused = false;
     pauseMenu.classList.add("hidden");
@@ -134,12 +163,30 @@ async function launchGame(networked: boolean) {
   }
 }
 
+function returnToLobby() {
+  if (!room) return;
+  game?.destroy();
+  game = null;
+  latestRound = null;
+  viewport.replaceChildren();
+  viewport.classList.add("hidden");
+  gameMenuToggle.classList.add("hidden");
+  pauseMenu.classList.add("hidden");
+  paused = false;
+  menu.classList.add("hidden");
+  lobby.classList.remove("hidden");
+  renderLobby(room);
+  renderVoiceStatus(voice.status);
+}
+
 function ensureMultiplayer() {
   if (multiplayer) return multiplayer;
 
   multiplayer = new MultiplayerClient();
   multiplayer.onRoster((nextRoom) => {
     room = nextRoom;
+    beginVoice(nextRoom);
+    voice.syncRoster(nextRoom.players.map((player) => player.id));
     renderLobby(nextRoom);
     game?.setRemotePlayers(nextRoom.players, nextRoom.playerId);
   });
@@ -149,6 +196,9 @@ function ensureMultiplayer() {
     game?.setSharedRoundState(state);
   });
   multiplayer.onStart(() => void launchGame(true));
+  multiplayer.onLobby(() => returnToLobby());
+  multiplayer.onNoise((noise) => game?.receiveNoise(noise));
+  multiplayer.onProps((_by, props) => game?.receiveProps(props));
   multiplayer.onError((message) => {
     status.textContent = message;
     lobbyStatus.textContent = message;
@@ -156,8 +206,36 @@ function ensureMultiplayer() {
   return multiplayer;
 }
 
+function beginVoice(info: RoomInfo) {
+  if (voiceSession) return;
+  voiceSession = true;
+  void voice.start(info.playerId);
+}
+
+function renderVoiceStatus(status: VoiceStatus) {
+  voiceStatusEl.textContent = status.message;
+  voiceDot.dataset.state = status.state;
+  muteMicButton.textContent = status.muted ? "UNMUTE (M)" : "MUTE (M)";
+  enableMicButton.classList.toggle("hidden", status.state === "live" || status.state === "connecting");
+  const hud = document.querySelector<HTMLElement>("#micHud");
+  if (hud) {
+    hud.onclick = () => voice.toggleMute();
+    hud.textContent = status.state === "live" ? (status.muted ? "🎙 MUTED (M)" : "🎙 LIVE (M)") : status.state === "listen-only" ? "🎙 NO MIC" : "🎙 …";
+    hud.dataset.state = status.muted ? "muted" : status.state;
+  }
+}
+
+function pumpVoiceMeter() {
+  const level = voice.localLevel;
+  voiceMeter.style.width = `${Math.min(100, Math.round(level * 400))}%`;
+  voiceDot.classList.toggle("speaking", voice.localSpeaking);
+  requestAnimationFrame(pumpVoiceMeter);
+}
+requestAnimationFrame(pumpVoiceMeter);
+
 async function createCamp() {
-  setBusy(true, "Waking multiplayer server and creating camp…");
+  voice.prepare();
+  setBusy(true, "Opening camp…");
   status.classList.remove("error");
   try {
     room = await ensureMultiplayer().createCamp(playerName());
@@ -171,9 +249,10 @@ async function createCamp() {
 }
 
 async function joinCamp() {
+  voice.prepare();
   const code = codeInput.value.trim().toUpperCase();
   if (!code) return;
-  setBusy(true, "Waking multiplayer server and joining camp…");
+  setBusy(true, "Joining camp…");
   status.classList.remove("error");
   try {
     room = await ensureMultiplayer().joinCamp(code, playerName());
@@ -240,6 +319,8 @@ function setPaused(next: boolean) {
 }
 
 function exitToMenu() {
+  voice.stop();
+  voiceSession = false;
   paused = false;
   pauseMenu.classList.add("hidden");
   bindingsPanel.classList.add("hidden");
@@ -268,6 +349,14 @@ resumeButton.addEventListener("click", () => setPaused(false));
 toggleBindingsButton.addEventListener("click", () => bindingsPanel.classList.toggle("hidden"));
 returnMainButton.addEventListener("click", exitToMenu);
 codeInput.addEventListener("input", () => { codeInput.value = codeInput.value.toUpperCase(); });
+enableMicButton.addEventListener("click", () => { voice.prepare(); if (room) { voiceSession = false; beginVoice(room); } });
+muteMicButton.addEventListener("click", () => voice.toggleMute());
+window.addEventListener("keydown", (event) => {
+  if (event.code === "KeyM" && !event.repeat && (game || !lobby.classList.contains("hidden"))) {
+    const target = event.target as HTMLElement | null;
+    if (target?.tagName !== "INPUT") voice.toggleMute();
+  }
+});
 window.addEventListener("keydown", (event) => {
   if (event.code !== "Escape" || !game) return;
   event.preventDefault();

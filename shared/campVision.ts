@@ -11,7 +11,7 @@ type BuildingSightSpec = {
   doorWidth: number;
 };
 
-type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
+export type Rect = { minX: number; maxX: number; minZ: number; maxZ: number };
 
 export const MONSTER_HOME = { x: -32, y: 0, z: -29 } as const;
 
@@ -30,7 +30,7 @@ export const CAMP_BUILDINGS: readonly BuildingSightSpec[] = [
 
 const WALL_HALF_THICKNESS = 0.18;
 
-function wallRects(building: BuildingSightSpec, doorOpen: boolean): Rect[] {
+export function wallRects(building: BuildingSightSpec, doorOpen: boolean): Rect[] {
   const halfW = building.width / 2;
   const halfD = building.depth / 2;
   const frontSegment = (building.width - building.doorWidth) / 2;
