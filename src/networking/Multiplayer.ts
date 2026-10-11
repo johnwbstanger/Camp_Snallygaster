@@ -8,7 +8,7 @@ export type RoomInfo = {
   players: PlayerState[];
 };
 
-const DEFAULT_PRODUCTION_SERVER = "https://camp-snallygaster-rebuild.onrender.com";
+const DEFAULT_PRODUCTION_SERVER = "https://camp-snallygaster-extraction--willstanger.replit.app";
 
 export class MultiplayerClient {
   private socket: WebSocket | null = null;
