@@ -251,7 +251,7 @@ export class Game {
       if (previous.distanceToSquared(target) > 100) avatar.position.copy(target);
       else avatar.position.lerp(target, blend);
       const moved = previous.distanceToSquared(avatar.position) > 0.00002;
-      avatar.userData.walkPhase = (avatar.userData.walkPhase ?? 0) + (moved ? 0.34 : 0.08);
+      avatar.userData.walkPhase = (avatar.userData.walkPhase ?? 0) + (moved ? 20.4 : 4.8) * dt;
       const visual = avatar.getObjectByName("counselor-visual");
       if (visual) visual.position.y = moved ? Math.abs(Math.sin(avatar.userData.walkPhase)) * 0.025 : 0;
       const yaw = avatar.userData.yaw as number;
