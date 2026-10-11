@@ -12,6 +12,7 @@ const requiredInputFragments = [
   'event.code === "KeyE"',
   'event.code === "KeyG"',
   'event.code === "Space"',
+  'event.button === 0) this.interactPressed = true',
   'event.button === 0) this.usePressed = true',
   'event.button === 2) this.scanPressed = true',
 ];
@@ -60,4 +61,4 @@ if (!(dAtZero.x > 0 && Math.abs(dAtZero.x - baseSpeed) < 1e-9)) throw new Error(
 const diagonal = velocity(1, 1, 0, baseSpeed);
 if (Math.abs(Math.hypot(diagonal.x, diagonal.z) - baseSpeed) > 1e-9) throw new Error("Diagonal movement is faster than cardinal movement");
 
-console.log("MOVEMENT CONTRACT PASS: W forward, S backward, normalized diagonal, walk 18.1125, sprint 31.696875, high-speed compound collision enabled");
+console.log("MOVEMENT CONTRACT PASS: W forward, S backward, left-click/E interact, normalized diagonal, walk 18.1125, sprint 31.696875, high-speed compound collision enabled");
