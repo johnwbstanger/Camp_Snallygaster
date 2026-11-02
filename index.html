@@ -1,16 +1,68 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-    <meta name="theme-color" content="#20352c" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="stylesheet" href="/src/pause.css" />
-    <title>Camp Snallygaster</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cult of Gary | Blackwood 1987</title>
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Special+Elite&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#101d33;--yellow:#f5d130;--cream:#f2e6c9;--red:#b92220;--blue:#2564a0}
+*{box-sizing:border-box}body{margin:0;background:var(--navy);color:var(--cream);padding:16px 16px 70px;font:16px/1.5 "Special Elite",Georgia,serif}main{max-width:620px;margin:auto}
+h1,h2,h3,button,.tag,.code{font-family:"Alfa Slab One",Georgia,serif;font-weight:400}h1{text-align:center;color:var(--yellow);font-size:36px;line-height:1.1;margin:12px 0}h1 small{display:block;font:13px "Special Elite";letter-spacing:2px;color:var(--cream);padding-top:10px}
+.panel{background:#0005;border:2px solid var(--cream);border-radius:10px;padding:15px;margin:12px 0}button,input,select{font:inherit;border-radius:7px;border:2px solid var(--cream);padding:11px;width:100%;margin:5px 0}input,select{background:var(--cream);color:#111}button{background:var(--yellow);color:#111;cursor:pointer}button.alt{background:var(--blue);color:white}.sm{width:auto;padding:5px 9px;font-size:12px}button:disabled{opacity:.45}.hide{display:none!important}.code{font-size:48px;color:var(--yellow);text-align:center;letter-spacing:7px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px dashed #ffffff44;padding:7px 0;flex-wrap:wrap}.tag{font-size:11px;background:var(--yellow);color:#111;border-radius:20px;padding:3px 8px}.tag.cult{background:var(--red);color:white}.out{opacity:.5;text-decoration:line-through}
+.card{background:var(--cream);color:#111;border-radius:13px;overflow:hidden;border:5px solid var(--cream);box-shadow:0 8px 0 #0005}.cardhead{padding:32px 15px;color:white;text-align:center}.cardhead h2{font-size:35px}.cardbody{padding:16px}.script{background:var(--cream);color:#111;border-radius:8px;padding:12px;margin:10px 0}.script strong{color:#87251f}.warn{color:#ffb79a}.pick{display:flex;align-items:center;gap:12px;margin:8px 0}.pick input{width:22px;margin:0}nav{display:flex;gap:8px}nav button{font-size:13px}#err{min-height:22px}
+</style></head><body><main><h1>CULT OF GARY<small>A BLACKWOOD MYSTERY • OCTOBER 1987</small></h1>
+<section id="home"><div class="panel"><h3>Join the Town</h3><input id="jcode" placeholder="FOUR-LETTER CODE" maxlength="4" autocapitalize="characters"><input id="jname" placeholder="Your name" maxlength="18"><button id="join">Join Lobby</button></div><div class="panel"><h3>Be the Director</h3><p>Host the game on this device. Keep the screen awake and the tab open.</p><button class="alt" id="host">Create Lobby</button></div><p class="warn" id="err"></p></section>
+<section id="lobby" class="hide"><div class="panel"><div id="lcode" class="code"></div><p>Share this code with the players.</p><div id="plist"></div><button id="deal" class="hide">Deal Roles</button><p id="wait" class="hide">Waiting for the Director to deal roles…</p></div></section>
+<section id="player" class="hide"><div id="pcard"></div></section>
+<section id="director" class="hide"><nav><button data-tab="roster">Roster</button><button data-tab="round">Round</button></nav><div id="roster" class="panel"></div><div id="round" class="panel hide"></div></section>
+</main><script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script><script>
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const random=a=>a[Math.floor(Math.random()*a.length)];
+const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+const names=a=>a.length<=1?a.join(""):a.slice(0,-1).join(", ")+" and "+a.at(-1);
+const ROLES={
+town:{n:"Townsperson",team:"town",color:"#286cb0",ab:"Find the missing, rescue them, protect lanterns and vote carefully.",tips:["A Townsperson you find returns with you to Town Hall.","Cultists can capture players they find alone; Gary can convert them."]},
+sheriff:{n:"Sheriff",team:"town",color:"#9b7d21",ab:"You cannot be captured or converted, and you never hide.",tips:["The Detective knows who you are.","Help the Town investigate without revealing yourself too early."]},
+detective:{n:"Detective",team:"town",color:"#9b7d21",ab:"At each Town Hall, privately inspect one player's role card.",tips:["You know the Sheriff.","Converted players may still show an old Town card. Ask the Director whether it is lying."]},
+journalist:{n:"Journalist",team:"town",color:"#9b7d21",ab:"At Town Hall, ask the Director whether one player serves the Town or Cult.",tips:["Keep your identity secret.","Share information strategically."]},
+cultist:{n:"Cultist",team:"cult",color:"#b42321",ab:"Capture a player you find alone: reveal your card and say 'All hail Gary.'",tips:["Captured players hide quietly with you, sardines-style.","You cannot capture the Sheriff or Detective.","Help Gary extinguish the lanterns."]},
+gary:{n:"Gary",team:"cult",color:"#7b1c1c",ab:"Lead the Cult. Once per round, snuff one lantern or convert one eligible Townsperson found alone.",tips:["Never hide.","You cannot convert the Sheriff or Detective.","If Gary is eliminated, the Town wins."]}
+};
+function dealRoles(n){let cult=n<=8?2:n<=12?3:n<=19?4:n<=29?5:6,k=n>=20?2:1,r=["gary"];for(let i=1;i<cult;i++)r.push("cultist");for(let i=0;i<k;i++)r.push("sheriff","detective");if(n>=8)for(let i=0;i<k;i++)r.push("journalist");while(r.length<n)r.push("town");return shuffle(r.slice(0,n));}
+const PLACES=["the Blackwood sawmill","the Cedar Ridge boat ramp","the Bowl-A-Rama back lot","the cannery loading dock","the fire tower road","the Maple Street laundromat","the Hollow Creek footpath","the Pinewood trailhead"];
+const CLUES=["belongings arranged in a circle","a smoldering lantern","a cassette stuck mid-song","a torn ALL HAIL GARY flyer","a CB radio crackling with static","a trail of pine needles"];
+const TIMES=["just after midnight","around two in the morning","before dawn"];
+function makeStory(n,missing){return [{head:"0:00 • Night falls",body:"Round "+n+". "+missing.map(p=>p.name+" was last seen "+random(TIMES)+" near "+random(PLACES)+", where someone found "+random(CLUES)+".").join(" ")+" Night falls. The missing, go hide!"},{head:"3:00 • Search",body:names(missing.map(p=>p.name))+" are missing. Search the dark and defend the lanterns!"},{head:"8:00 • Town Hall",body:"The whistle echoes through the pines. Everyone who is free, return to Town Hall."}];}
+let peer,room,me={},players=[],connections={},started=false,roundNumber=1,lit=3,streak=0,selected=new Set(),story=null,tab="roster",answer="";
+const view=id=>["home","lobby","player","director"].forEach(x=>$("#"+x).classList.toggle("hide",x!==id));
+const fail=s=>$("#err").textContent=s;
+const token=()=>{let t=localStorage.getItem("cog_token");if(!t){t=Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem("cog_token",t);}return t;};
+const team=p=>p.converted||ROLES[p.role].team==="cult"?"cult":"town";
+function send(p,m){let c=connections[p.token];if(c&&c.open)c.send(m);}
+function rolePacket(p){return {type:"role",role:p.role,state:p.state,converted:!!p.converted,mates:team(p)==="cult"?players.filter(x=>x!==p&&team(x)==="cult").map(x=>x.name):[],sheriffs:p.role==="detective"?players.filter(x=>x.role==="sheriff").map(x=>x.name):[]};}
+function lobby(){ $("#plist").innerHTML=players.map(p=>"<div class='row'>"+esc(p.name)+"</div>").join("")||"<p>No players yet.</p>";$("#deal").disabled=players.length<6;$("#deal").textContent=players.length<6?"Need "+(6-players.length)+" more players":"Deal Roles ("+players.length+")";}
+$("#host").onclick=()=>{if(typeof Peer==="undefined")return fail("Network library unavailable. Check your connection.");room=Array.from({length:4},()=>random("ABCDEFGHJKLMNPQRSTUVWXYZ".split(""))).join("");peer=new Peer("cog87-"+room);peer.on("error",e=>fail("Lobby error: "+e.type));peer.on("open",()=>{me.host=true;$("#lcode").textContent=room;$("#deal").classList.remove("hide");view("lobby");lobby();});peer.on("connection",c=>{c.on("data",m=>{if(!m||m.type!=="join"||typeof m.name!=="string"||typeof m.token!=="string")return;let name=m.name.trim().slice(0,18),p=players.find(x=>x.token===m.token);if(!p){if(started||!name||players.some(x=>x.name.toLowerCase()===name.toLowerCase()))return c.send({type:"reject",reason:started?"Game already started.":"Name unavailable."});p={name,token:m.token,role:null,state:"alive",converted:false};players.push(p);}connections[p.token]=c;c.send(p.role?rolePacket(p):{type:"joined"});lobby();renderDirector();});});};
+$("#join").onclick=()=>{let code=$("#jcode").value.trim().toUpperCase(),name=$("#jname").value.trim();if(code.length!==4||!name)return fail("Enter a four-letter lobby code and your name.");localStorage.setItem("cog_saved",JSON.stringify({code,name}));join(code,name);};
+function join(code,name){if(typeof Peer==="undefined")return fail("Network library unavailable.");peer=new Peer();peer.on("error",e=>fail("Connection error: "+e.type));peer.on("open",()=>{let c=peer.connect("cog87-"+code,{reliable:true});c.on("open",()=>c.send({type:"join",name,token:token()}));c.on("data",m=>{if(m.type==="reject")return fail(m.reason);if(m.type==="joined"){$("#lcode").textContent=code;$("#plist").textContent="Joined as "+name;$("#wait").classList.remove("hide");view("lobby");}if(m.type==="role"||m.type==="state"){me={...me,...m};renderCard();}});c.on("close",()=>fail("Director disconnected. Reopen this page to reconnect."));});}
+$("#deal").onclick=()=>{if(players.length<6)return;let roles=dealRoles(players.length);players.forEach((p,i)=>p.role=roles[i]);started=true;players.forEach(p=>send(p,rolePacket(p)));view("director");renderDirector();};
+function renderCard(){if(!me.role)return;let r=ROLES[me.role];view("player");$("#pcard").innerHTML=(me.converted?"<div class='panel'>You have been converted. You now serve Gary. Keep your original card secret.</div>":"")+(me.state!=="alive"?"<div class='panel'>"+(me.state==="out"?"You have been eliminated. Remain silent.":"You are missing. Go hide within the playing boundary.")+"</div>":"")+"<div class='card'><div class='cardhead' style='background:"+r.color+"'><div>BLACKWOOD • 1987</div><h2>"+esc(r.n)+"</h2><div>"+(r.team==="cult"?"THE CULT":"THE TOWN")+"</div></div><div class='cardbody'><b>"+esc(r.ab)+"</b><ul>"+r.tips.map(t=>"<li>"+esc(t)+"</li>").join("")+"</ul>"+(me.sheriffs&&me.sheriffs.length?"<p><b>The Sheriff:</b> "+esc(names(me.sheriffs))+"</p>":"")+(me.mates&&me.mates.length?"<p><b>Your Cult teammates:</b> "+esc(names(me.mates))+"</p>":"")+"<small>Keep this card private.</small></div></div>";}
+const active=p=>p.state!=="out";
+const eligible=()=>players.filter(p=>p.state==="alive"&&!["gary","sheriff","detective"].includes(p.role));
+function winning(){let g=players.find(p=>p.role==="gary");if(g&&g.state==="out")return"TOWN WINS: Gary has been eliminated.";if(lit===0)return"CULT WINS: All three lanterns are out.";if(streak>=3)return"TOWN WINS: All lanterns survived three Town Halls.";let remaining=players.filter(p=>active(p)&&team(p)==="town");if(remaining.length&&remaining.every(p=>p.role==="sheriff"))return"CULT WINS: Only the Sheriff remains.";return"";}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;renderDirector();});
+function renderDirector(){if(!started)return;$("#roster").classList.toggle("hide",tab!=="roster");$("#round").classList.toggle("hide",tab!=="round");document.querySelectorAll("nav button").forEach(b=>b.style.background=b.dataset.tab===tab?"var(--cream)":"var(--yellow)");let w=winning();
+$("#roster").innerHTML="<h3>Director's Roster</h3>"+(w?"<div class='script'><strong>"+esc(w)+"</strong></div>":"")+"<p>Lanterns: "+lit+"/3 • Full-light Town Halls: "+streak+"/3</p><button class='sm' onclick='changeLantern(-1)'>Snuff lantern</button> <button class='sm alt' onclick='changeLantern(1)'>Relight</button>"+players.map((p,i)=>"<div class='row "+(p.state==="out"?"out":"")+"'><span>"+esc(p.name)+" <span class='tag "+(team(p)==="cult"?"cult":"")+"'>"+esc(ROLES[p.role].n)+"</span>"+(p.converted?" (converted)":"")+" "+(p.state!=="alive"?"("+p.state+")":"")+"</span><span><button class='sm' onclick='convert("+i+")'>Convert</button> <button class='sm alt' onclick='eliminate("+i+")'>"+(p.state==="out"?"Restore":"Eliminate")+"</button></span></div>").join("")+"<h3>Private checks</h3><select onchange='checkPlayer(this.value)'><option value=''>Choose player</option>"+players.map((p,i)=>"<option value='"+i+"'>"+esc(p.name)+"</option>").join("")+"</select><div class='script' id='answer'>"+answer+"</div>";
+$("#round").innerHTML="<h3>Round "+roundNumber+"</h3><p>Choose up to three hiders (not Gary, Sheriff, or Detective).</p><button class='alt' onclick='pickRandom()'>Pick three</button>"+eligible().map(p=>"<label class='pick'><input type='checkbox' "+(selected.has(p.token)?"checked":"")+" onchange='pick("+JSON.stringify(p.token)+",this.checked)'>"+esc(p.name)+"</label>").join("")+"<button onclick='generateStory()'>Generate story</button>"+(story?story.map(s=>"<div class='script'><strong>"+esc(s.head)+"</strong><p>"+esc(s.body)+"</p></div>").join(""):"")+(story?"<button class='alt' onclick='sendHiders()'>Send missing into hiding</button>":"")+"<button onclick='endTownHall()'>End Town Hall / next round</button>";
+}
+window.changeLantern=d=>{lit=Math.max(0,Math.min(3,lit+d));renderDirector();};
+window.convert=i=>{let p=players[i];if(!p||p.converted||team(p)==="cult"||["sheriff","detective"].includes(p.role))return;p.converted=true;send(p,rolePacket(p));renderDirector();};
+window.eliminate=i=>{let p=players[i];if(!p)return;p.state=p.state==="out"?"alive":"out";send(p,{type:"state",state:p.state,converted:p.converted});renderDirector();};
+window.checkPlayer=i=>{if(i==="")return;let p=players[Number(i)];answer="<b>Journalist:</b> "+esc(p.name)+" serves "+team(p)+".<p><b>Detective:</b> Card says "+esc(ROLES[p.role].n)+(p.converted?". Director nods: this card is lying.":". No nod: this card is true.")+"</p>";$("#answer").innerHTML=answer;};
+window.pickRandom=()=>{selected=new Set(shuffle(eligible()).slice(0,3).map(p=>p.token));story=null;renderDirector();};
+window.pick=(t,on)=>{if(on){if(selected.size>=3)return renderDirector();selected.add(t);}else selected.delete(t);story=null;renderDirector();};
+window.generateStory=()=>{let missing=players.filter(p=>selected.has(p.token)&&p.state==="alive");if(!missing.length)return;story=makeStory(roundNumber,missing);renderDirector();};
+window.sendHiders=()=>{if(!story)return;players.forEach(p=>{if(selected.has(p.token)&&p.state==="alive"){p.state="missing";send(p,{type:"state",state:"missing",converted:p.converted});}});selected.clear();renderDirector();};
+window.endTownHall=()=>{streak=lit===3?streak+1:0;players.forEach(p=>{if(p.state==="missing"){p.state="alive";send(p,{type:"state",state:"alive",converted:p.converted});}});roundNumber++;selected.clear();story=null;renderDirector();};
+try{const saved=JSON.parse(localStorage.getItem("cog_saved")||"null");if(saved){$("#jcode").value=saved.code||"";$("#jname").value=saved.name||"";}}catch(e){}
+</script></body></html>
